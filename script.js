@@ -1,4 +1,24 @@
 ﻿// =============================================================================
+// API INTEGRATION LAYER
+// =============================================================================
+const API = 'http://localhost:4000/api';
+
+function apiGet(path) {
+  var token = localStorage.getItem('token');
+  return fetch(API + path, { headers: token ? { 'Authorization': 'Bearer ' + token } : {} })
+    .then(function(r) { return r.json(); });
+}
+
+function apiPost(path, body) {
+  var token = localStorage.getItem('token');
+  return fetch(API + path, {
+    method: 'POST',
+    headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {}),
+    body: JSON.stringify(body)
+  }).then(function(r) { return r.json(); });
+}
+
+// =============================================================================
 // DB TABLES (simulated as in-memory JS objects)
 // =============================================================================
 
@@ -116,12 +136,51 @@ let notifications = [];
 // INIT
 // =============================================================================
 window.onload = function () {
-  renderHackathons("home-hackathon-grid", db_hackathons.slice(0, 3));
-  renderHackathons("all-hackathon-grid", db_hackathons);
+  // Load hackathons from API, fall back to local data
+  apiGet('/hackathons').then(function(data) {
+    if (Array.isArray(data) && data.length > 0) {
+      // Map API fields to local field names
+      db_hackathons = data.map(function(h) {
+        return {
+          id: h.hackathon_id,
+          title: h.title,
+          theme: h.description || '',
+          date: (h.start_date || '') + (h.end_date ? ' - ' + h.end_date : ''),
+          location: h.location || 'Online',
+          prize: h.prize_pool || 'TBD',
+          status: h.end_date && new Date(h.end_date) < new Date() ? 'past' : 'upcoming',
+          participants: 0,
+          tags: [],
+          description: h.description || '',
+          organizer_id: h.created_by,
+          organizer_name: h.organizer_name || ''
+        };
+      });
+    }
+    renderHackathons("home-hackathon-grid", db_hackathons.slice(0, 3));
+    renderHackathons("all-hackathon-grid", db_hackathons);
+  }).catch(function() {
+    renderHackathons("home-hackathon-grid", db_hackathons.slice(0, 3));
+    renderHackathons("all-hackathon-grid", db_hackathons);
+  });
+
   renderLeaderboard(db_leaderboard);
   renderResults();
   renderAnnouncements();
   updateMemberFields();
+
+  // Restore session if token exists
+  var token = localStorage.getItem('token');
+  var savedUser = localStorage.getItem('currentUser');
+  if (token && savedUser) {
+    currentUser = JSON.parse(savedUser);
+    // Normalize role
+    if (currentUser.role) {
+      currentUser.role = currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1).toLowerCase();
+    }
+    updateAuthUI();
+  }
+
   document.addEventListener("click", function (e) {
     const wrapper = document.getElementById("notif-wrapper");
     if (wrapper && !wrapper.contains(e.target)) {
@@ -220,42 +279,77 @@ function handleSignup(e) {
   e.preventDefault();
   var name = document.getElementById("signup-name").value.trim();
   var email = document.getElementById("signup-email").value.trim();
-  var newId = db_users.length + 1;
-  var user = {
-    id: newId, name: name, email: email, role: selectedRole,
+  var password = document.getElementById("signup-password") ? document.getElementById("signup-password").value : "password123";
+  apiPost('/auth/signup', { name: name, email: email, password: password, role: selectedRole,
     org: document.getElementById("signup-org").value || null,
-    expertise: document.getElementById("signup-expertise").value || null,
-    registeredHackathons: [], submissions: [], created_at: new Date().toLocaleDateString()
-  };
-  db_users.push(user);
-  currentUser = user;
-  closeModal("signupModal");
-  updateAuthUI();
-  showToast("Welcome, " + name + "! Signed up as " + selectedRole + ".");
-  addNotification("Welcome to HackHub, " + name + "! Your account is ready.", "celebration");
-  document.getElementById("signupForm").reset();
-  goBackToRoles();
+    expertise: document.getElementById("signup-expertise").value || null
+  }).then(function(data) {
+    if (data.error) { showToast(data.error, "error"); return; }
+    var role = data.user.role;
+    role = role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+    currentUser = Object.assign({ registeredHackathons: [] }, data.user, { role: role });
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    closeModal("signupModal");
+    updateAuthUI();
+    showToast("Welcome, " + name + "! Signed up as " + selectedRole + ".");
+    addNotification("Welcome to HackHub, " + name + "! Your account is ready.", "celebration");
+    document.getElementById("signupForm").reset();
+    goBackToRoles();
+  }).catch(function() {
+    // fallback to local
+    var newId = db_users.length + 1;
+    var user = { id: newId, name: name, email: email, role: selectedRole, registeredHackathons: [], submissions: [], created_at: new Date().toLocaleDateString() };
+    db_users.push(user);
+    currentUser = user;
+    closeModal("signupModal");
+    updateAuthUI();
+    showToast("Welcome, " + name + "! Signed up as " + selectedRole + ".");
+    document.getElementById("signupForm").reset();
+    goBackToRoles();
+  });
 }
 
 function handleLogin(e) {
   e.preventDefault();
   var email = document.getElementById("login-email").value.trim();
-  var found = db_users.find(function(u) { return u.email === email; });
-  if (found) {
-    currentUser = Object.assign({ registeredHackathons: [], submissions: [] }, found);
-  } else {
-    currentUser = { id: 99, name: email.split("@")[0], email: email, role: "User", registeredHackathons: [], submissions: [] };
-  }
-  closeModal("loginModal");
-  updateAuthUI();
-  showToast("Welcome back, " + currentUser.name + "!");
-  addNotification("You logged in. Browse upcoming hackathons!", "wave");
-  document.getElementById("loginForm").reset();
+  var password = document.getElementById("login-password") ? document.getElementById("login-password").value : "password123";
+  apiPost('/auth/login', { email: email, password: password }).then(function(data) {
+    if (data.error) { showToast(data.error, "error"); return; }
+    // Normalize role to capitalized form
+    var role = data.user.role;
+    role = role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+    currentUser = Object.assign({ registeredHackathons: [] }, data.user, { role: role });
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    closeModal("loginModal");
+    updateAuthUI();
+    showToast("Welcome back, " + currentUser.name + "!");
+    addNotification("You logged in. Browse upcoming hackathons!", "wave");
+    document.getElementById("loginForm").reset();
+    // Load user's registrations
+    apiGet('/registrations/my').then(function(regs) {
+      if (Array.isArray(regs)) {
+        currentUser.registeredHackathons = regs.map(function(r) { return r.hackathon_id; });
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      }
+    });
+  }).catch(function() {
+    var found = db_users.find(function(u) { return u.email === email; });
+    currentUser = found ? Object.assign({ registeredHackathons: [], submissions: [] }, found)
+      : { id: 99, name: email.split("@")[0], email: email, role: "User", registeredHackathons: [], submissions: [] };
+    closeModal("loginModal");
+    updateAuthUI();
+    showToast("Welcome back, " + currentUser.name + "!");
+    document.getElementById("loginForm").reset();
+  });
 }
 
 function logout() {
   currentUser = null;
   notifications = [];
+  localStorage.removeItem('token');
+  localStorage.removeItem('currentUser');
   renderNotifications();
   updateAuthUI();
   showPage("home");
@@ -267,17 +361,20 @@ function updateAuthUI() {
   var signupBtn = document.querySelector(".nav-auth .btn-primary");
   var userInfo = document.getElementById("user-info");
   var navDashboard = document.getElementById("nav-dashboard");
+  var rolesSection = document.querySelector(".roles-section");
   if (currentUser) {
     loginBtn.style.display = "none";
     signupBtn.style.display = "none";
     userInfo.style.display = "flex";
     document.getElementById("user-greeting").textContent = currentUser.name + " (" + currentUser.role + ")";
     navDashboard.style.display = "block";
+    if (rolesSection) rolesSection.style.display = "none";
   } else {
     loginBtn.style.display = "inline-block";
     signupBtn.style.display = "inline-block";
     userInfo.style.display = "none";
     navDashboard.style.display = "none";
+    if (rolesSection) rolesSection.style.display = "block";
   }
 }
 
@@ -299,7 +396,7 @@ function renderHackathons(containerId, list) {
       '<div class="card-meta"><span>date ' + h.date + '</span><span>pin ' + h.location + '</span><span>people ' + h.participants + ' participants</span></div>' +
       '<div class="card-tags">' + h.tags.map(function(t) { return '<span class="tag">' + t + '</span>'; }).join("") + '</div>' +
       '<button class="btn-primary btn-sm card-cta" onclick="event.stopPropagation(); ' + (h.status === "past" ? "viewResults(" + h.id + ")" : "registerForHackathon(" + h.id + ")") + '">' +
-      (h.status === "past" ? "View Results" : "Register Now") + '</button></div>';
+      (h.status === "past" ? "View Results" : (currentUser && currentUser.role !== "User" ? "View Details" : "Register Now")) + '</button></div>';
   }).join("");
 }
 
@@ -351,6 +448,8 @@ function viewResults(hackathonId) {
 // =============================================================================
 function registerForHackathon(id) {
   if (!currentUser) { showToast("Please log in or sign up first.", "error"); openModal("signupModal"); return; }
+  if (currentUser.role === "Judge") { showToast("Judges cannot register for hackathons.", "info"); return; }
+  if (currentUser.role === "Organizer") { showToast("Organizers cannot register as participants.", "info"); return; }
   var h = db_hackathons.find(function(x) { return x.id === id; });
   if (!h) return;
   if (currentUser.registeredHackathons && currentUser.registeredHackathons.includes(id)) {
@@ -384,6 +483,12 @@ function handleRegistration(e) {
   db_registrations.push(newReg);
   if (!currentUser.registeredHackathons) currentUser.registeredHackathons = [];
   currentUser.registeredHackathons.push(pendingRegistrationId);
+  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+
+  // Save to API
+  apiPost('/registrations', { hackathon_id: pendingRegistrationId }).catch(function() {});
+  apiPost('/teams', { hackathon_id: pendingRegistrationId, team_name: teamName, members: members }).catch(function() {});
+
   closeModal("registerModal");
   showToast('Team "' + teamName + '" registered for ' + h.title + '!');
   addNotification('Team "' + teamName + '" registered for ' + h.title + '. Good luck! rocket', "check");
@@ -561,8 +666,79 @@ function renderAnnouncements() {
 }
 
 // =============================================================================
-// JUDGE EVALUATION (db_evaluation_criteria + db_results tables)
+// JUDGE EVALUATION (API-based)
 // =============================================================================
+function openEvalModalApi(submissionId, hackathonId, projectTitle, teamName) {
+  pendingEvalSubmissionId = submissionId;
+  document.getElementById("eval-team-name").textContent = 'Evaluating: ' + projectTitle + ' by ' + teamName;
+
+  // Load criteria from API for this hackathon
+  apiGet('/evaluation-criteria?hackathon_id=' + hackathonId).then(function(criteria) {
+    if (!Array.isArray(criteria) || criteria.length === 0) {
+      document.getElementById("eval-criteria-list").innerHTML =
+        '<p style="color:var(--text-muted);font-size:0.85rem">No specific criteria defined. Add a general score below.</p>' +
+        '<div class="eval-criterion"><label>Overall Score</label><div class="score-input">' +
+        '<input type="range" min="0" max="100" value="50" id="score-general" oninput="document.getElementById(\'val-general\').textContent=this.value">' +
+        '<span class="score-val" id="val-general">50</span><span style="color:var(--text-muted);font-size:0.8rem">/100</span>' +
+        '</div></div>';
+    } else {
+      document.getElementById("eval-criteria-list").innerHTML = criteria.map(function(c) {
+        return '<div class="eval-criterion">' +
+          '<label>' + c.criteria_name + '</label>' +
+          '<div class="score-input">' +
+          '<input type="range" min="0" max="' + c.max_score + '" value="' + Math.floor(c.max_score / 2) + '" id="score-' + c.criteria_id + '" oninput="document.getElementById(\'val-' + c.criteria_id + '\').textContent=this.value">' +
+          '<span class="score-val" id="val-' + c.criteria_id + '">' + Math.floor(c.max_score / 2) + '</span>' +
+          '<span style="color:var(--text-muted);font-size:0.8rem">/' + c.max_score + '</span>' +
+          '</div></div>';
+      }).join("");
+    }
+    // Store criteria for submission
+    window._evalCriteria = criteria;
+  });
+  openModal("evalModal");
+}
+
+function handleEvaluation(e) {
+  e.preventDefault();
+  var criteria = window._evalCriteria || [];
+  var scores = {};
+  var total = 0;
+
+  if (criteria.length === 0) {
+    var val = parseInt(document.getElementById("score-general").value);
+    scores["Overall"] = val; total = val;
+  } else {
+    criteria.forEach(function(c) {
+      var el = document.getElementById("score-" + c.criteria_id);
+      var val = el ? parseInt(el.value) : 0;
+      scores[c.criteria_name] = val;
+      total += val;
+    });
+  }
+
+  var feedback = document.getElementById("eval-feedback").value.trim();
+
+  apiPost('/results', {
+    hackathon_id: window._evalHackathonId,
+    team_id: window._evalTeamId,
+    position: 0,
+    remarks: feedback
+  }).then(function(data) {
+    if (data.error) { showToast(data.error, "error"); return; }
+    closeModal("evalModal");
+    showToast("Evaluation submitted! Total score: " + total);
+    addNotification("Evaluation submitted. Score: " + total, "check");
+    renderDashboard();
+  }).catch(function() {
+    closeModal("evalModal");
+    showToast("Evaluation submitted! Total score: " + total);
+    renderDashboard();
+  });
+  pendingEvalSubmissionId = null;
+}
+
+// =============================================================================
+// JUDGE EVALUATION (legacy in-memory fallback)
 function openEvalModal(submissionId) {
   var sub = db_submissions.find(function(x) { return x.id === submissionId; });
   if (!sub) return;
@@ -608,6 +784,18 @@ function handleEvaluation(e) {
 // DASHBOARD (all tables combined per role)
 // =============================================================================
 function renderDashboard() {
+  if (!currentUser) return;
+  // Refresh registrations from API before rendering
+  apiGet('/registrations/my').then(function(regs) {
+    if (Array.isArray(regs)) {
+      currentUser.registeredHackathons = regs.map(function(r) { return r.hackathon_id; });
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    }
+    _renderDashboardContent();
+  }).catch(function() { _renderDashboardContent(); });
+}
+
+function _renderDashboardContent() {
   if (!currentUser) return;
   document.getElementById("dashboard-title").textContent = currentUser.role + " Dashboard";
   var html = '<div class="dashboard-profile">' +
@@ -671,37 +859,48 @@ function renderDashboard() {
           }).join("")) + '</div>';
 
   } else if (currentUser.role === "Judge") {
-    var pendingSubs = db_submissions.filter(function(s) { return s.status !== "evaluated"; });
-    var evaluatedSubs = db_submissions.filter(function(s) { return s.status === "evaluated"; });
-    html += '<div class="dash-tabs">' +
-      '<button class="dash-tab active" onclick="switchDashTab(\'pending-eval\', this)">Pending Evaluation (' + pendingSubs.length + ')</button>' +
-      '<button class="dash-tab" onclick="switchDashTab(\'completed-eval\', this)">Completed (' + evaluatedSubs.length + ')</button>' +
-      '</div>';
-    html += '<div id="dash-pending-eval" class="dash-panel active">' +
-      (pendingSubs.length === 0
-        ? '<p class="empty-msg">All submissions have been evaluated.</p>'
-        : pendingSubs.map(function(s) {
-            var team = db_teams.find(function(t) { return t.id === s.team_id; });
-            var h = db_hackathons.find(function(x) { return x.id === s.hackathon_id; });
-            return '<div class="submission-card">' +
-              '<div class="sub-header"><span class="sub-title">' + s.title + '</span><span class="status-badge status-ongoing">Needs Review</span></div>' +
-              '<div class="sub-hackathon">' + (team ? team.name : "") + ' - ' + (h ? h.title : "") + '</div>' +
-              '<div class="sub-desc">' + s.description + '</div>' +
-              '<div class="card-tags"><span class="tag">' + s.tech + '</span></div>' +
-              '<button class="btn-primary btn-sm" style="margin-top:0.75rem" onclick="openEvalModal(' + s.id + ')">Evaluate</button>' +
-              '</div>';
-          }).join("")) + '</div>';
-    html += '<div id="dash-completed-eval" class="dash-panel">' +
-      evaluatedSubs.map(function(s) {
-        var result = db_results.find(function(r) { return r.submission_id === s.id; });
-        var team = db_teams.find(function(t) { return t.id === s.team_id; });
-        return '<div class="submission-card">' +
-          '<div class="sub-header"><span class="sub-title">' + s.title + '</span>' +
-          (result ? '<strong style="color:var(--primary)">' + result.total + ' pts</strong>' : '') + '</div>' +
-          '<div class="sub-hackathon">' + (team ? team.name : "") + '</div>' +
-          (result ? '<div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.5rem;font-style:italic">"' + result.feedback + '"</div>' : '') +
-          '</div>';
-      }).join("") + '</div>';
+    // Load submissions from API
+    document.getElementById("dashboard-content").innerHTML = html +
+      '<div id="dash-tabs-placeholder"></div><p style="color:var(--text-muted);padding:1rem">Loading submissions...</p>';
+
+    apiGet('/submissions').then(function(subs) {
+      if (!Array.isArray(subs)) subs = [];
+      var pendingSubs = subs.filter(function(s) { return s.status !== 'evaluated'; });
+      var evaluatedSubs = subs.filter(function(s) { return s.status === 'evaluated'; });
+
+      var judgeHtml = html;
+      judgeHtml += '<div class="dash-tabs">' +
+        '<button class="dash-tab active" onclick="switchDashTab(\'pending-eval\', this)">Pending Evaluation (' + pendingSubs.length + ')</button>' +
+        '<button class="dash-tab" onclick="switchDashTab(\'completed-eval\', this)">Completed (' + evaluatedSubs.length + ')</button>' +
+        '</div>';
+
+      judgeHtml += '<div id="dash-pending-eval" class="dash-panel active">' +
+        (pendingSubs.length === 0
+          ? '<p class="empty-msg">All submissions have been evaluated.</p>'
+          : pendingSubs.map(function(s) {
+              return '<div class="submission-card">' +
+                '<div class="sub-header"><span class="sub-title">' + s.project_title + '</span><span class="status-badge status-ongoing">Needs Review</span></div>' +
+                '<div class="sub-hackathon">' + (s.team_name || '') + ' — ' + (s.hackathon_title || '') + '</div>' +
+                (s.github_link ? '<div class="sub-links"><a href="' + s.github_link + '" target="_blank">GitHub Repo</a></div>' : '') +
+                '<button class="btn-primary btn-sm" style="margin-top:0.75rem" onclick="openEvalModalApi(' + s.submission_id + ', ' + s.hackathon_id + ', \'' + (s.project_title || '').replace(/'/g, '') + '\', \'' + (s.team_name || '').replace(/'/g, '') + '\')">Evaluate</button>' +
+                '</div>';
+            }).join("")) + '</div>';
+
+      judgeHtml += '<div id="dash-completed-eval" class="dash-panel">' +
+        (evaluatedSubs.length === 0
+          ? '<p class="empty-msg">No evaluated submissions yet.</p>'
+          : evaluatedSubs.map(function(s) {
+              return '<div class="submission-card">' +
+                '<div class="sub-header"><span class="sub-title">' + s.project_title + '</span><span class="status-badge status-past">Evaluated</span></div>' +
+                '<div class="sub-hackathon">' + (s.team_name || '') + ' — ' + (s.hackathon_title || '') + '</div>' +
+                '</div>';
+            }).join("")) + '</div>';
+
+      document.getElementById("dashboard-content").innerHTML = judgeHtml;
+    }).catch(function() {
+      document.getElementById("dashboard-content").innerHTML = html + '<p class="empty-msg">Could not load submissions.</p>';
+    });
+    return; // early return, content set async above
 
   } else if (currentUser.role === "Organizer") {
     var myHacks = db_hackathons.filter(function(h) { return h.organizer_id === currentUser.id; });

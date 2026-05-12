@@ -1,48 +1,58 @@
 const router = require('express').Router();
-const store = require('../data/store');
+const db = require('../db');
 const { authenticate, authorize } = require('../middleware/auth');
 
-// GET /api/users  (Organizer/Judge only)
-router.get('/', authenticate, authorize('Organizer', 'Judge'), (req, res) => {
-  const users = store.users.map(({ password, ...u }) => u);
-  res.json(users);
+// GET /api/users
+router.get('/', authenticate, authorize('Organizer', 'Judge'), async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT user_id, name, email, role, created_at FROM users');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/users/:id
-router.get('/:id', authenticate, (req, res) => {
-  const user = store.users.find(u => u.id === parseInt(req.params.id));
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const { password, ...safe } = user;
-  res.json(safe);
+router.get('/:id', authenticate, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      'SELECT user_id, name, email, role, created_at FROM users WHERE user_id = ?',
+      [req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// PUT /api/users/:id  (own profile only)
-router.put('/:id', authenticate, (req, res) => {
+// PUT /api/users/:id
+router.put('/:id', authenticate, async (req, res) => {
   if (req.user.id !== parseInt(req.params.id))
     return res.status(403).json({ error: "Cannot update another user's profile" });
 
-  const user = store.users.find(u => u.id === parseInt(req.params.id));
-  if (!user) return res.status(404).json({ error: 'User not found' });
-
-  const { name, org, expertise } = req.body;
-  if (name) user.name = name;
-  if (org !== undefined) user.org = org;
-  if (expertise !== undefined) user.expertise = expertise;
-
-  const { password, ...safe } = user;
-  res.json({ message: 'Profile updated', user: safe });
+  const { name } = req.body;
+  try {
+    await db.query('UPDATE users SET name = COALESCE(?, name) WHERE user_id = ?', [name || null, req.params.id]);
+    const [rows] = await db.query('SELECT user_id, name, email, role, created_at FROM users WHERE user_id = ?', [req.params.id]);
+    res.json({ message: 'Profile updated', user: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// DELETE /api/users/:id  (own account only)
-router.delete('/:id', authenticate, (req, res) => {
+// DELETE /api/users/:id
+router.delete('/:id', authenticate, async (req, res) => {
   if (req.user.id !== parseInt(req.params.id))
     return res.status(403).json({ error: "Cannot delete another user's account" });
 
-  const idx = store.users.findIndex(u => u.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'User not found' });
-
-  store.users.splice(idx, 1);
-  res.json({ message: 'Account deleted' });
+  try {
+    const [result] = await db.query('DELETE FROM users WHERE user_id = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'User not found' });
+    res.json({ message: 'Account deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

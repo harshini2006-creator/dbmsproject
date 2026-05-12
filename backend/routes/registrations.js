@@ -1,64 +1,77 @@
 const router = require('express').Router();
-const store = require('../data/store');
+const db = require('../db');
 const { authenticate, authorize } = require('../middleware/auth');
 
-// GET /api/registrations?hackathon_id=  (Organizer/Judge)
-router.get('/', authenticate, authorize('Organizer', 'Judge'), (req, res) => {
-  let list = store.registrations;
-  if (req.query.hackathon_id) list = list.filter(r => r.hackathon_id === parseInt(req.query.hackathon_id));
-
-  const result = list.map(r => {
-    const user = store.users.find(u => u.id === r.user_id);
-    const hackathon = store.hackathons.find(h => h.id === r.hackathon_id);
-    const team = store.teams.find(t => t.id === r.team_id);
-    return { ...r, user_name: user?.name, email: user?.email, hackathon_title: hackathon?.title, team_name: team?.name };
-  });
-  res.json(result);
+// GET /api/registrations?hackathon_id=
+router.get('/', authenticate, authorize('Organizer', 'Judge'), async (req, res) => {
+  try {
+    let query = `
+      SELECT r.*, u.name AS user_name, u.email, h.title AS hackathon_title
+      FROM registrations r
+      LEFT JOIN users u ON u.user_id = r.user_id
+      LEFT JOIN hackathons h ON h.hackathon_id = r.hackathon_id
+    `;
+    const params = [];
+    if (req.query.hackathon_id) { query += ' WHERE r.hackathon_id = ?'; params.push(req.query.hackathon_id); }
+    const [rows] = await db.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// GET /api/registrations/my  (logged-in user's registrations)
-router.get('/my', authenticate, (req, res) => {
-  const list = store.registrations.filter(r => r.user_id === req.user.id);
-  const result = list.map(r => {
-    const h = store.hackathons.find(x => x.id === r.hackathon_id);
-    const team = store.teams.find(t => t.id === r.team_id);
-    return { ...r, hackathon_title: h?.title, status_hackathon: h?.status, date_start: h?.date_start, date_end: h?.date_end, prize: h?.prize, team_name: team?.name };
-  });
-  res.json(result);
+// GET /api/registrations/my
+router.get('/my', authenticate, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT r.*, h.title AS hackathon_title, h.start_date, h.end_date, h.prize_pool
+      FROM registrations r
+      LEFT JOIN hackathons h ON h.hackathon_id = r.hackathon_id
+      WHERE r.user_id = ?
+    `, [req.user.id]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST /api/registrations  (User registers)
-router.post('/', authenticate, authorize('User'), (req, res) => {
-  const { hackathon_id, team_id } = req.body;
+// POST /api/registrations
+router.post('/', authenticate, authorize('User'), async (req, res) => {
+  const { hackathon_id } = req.body;
   if (!hackathon_id) return res.status(400).json({ error: 'hackathon_id is required' });
 
-  const hackathon = store.hackathons.find(h => h.id === hackathon_id);
-  if (!hackathon) return res.status(404).json({ error: 'Hackathon not found' });
-  if (hackathon.status === 'past') return res.status(400).json({ error: 'Hackathon has ended' });
+  try {
+    const [hackathons] = await db.query('SELECT * FROM hackathons WHERE hackathon_id = ?', [hackathon_id]);
+    if (hackathons.length === 0) return res.status(404).json({ error: 'Hackathon not found' });
 
-  const exists = store.registrations.find(r => r.user_id === req.user.id && r.hackathon_id === hackathon_id);
-  if (exists) return res.status(409).json({ error: 'Already registered for this hackathon' });
+    const [existing] = await db.query(
+      'SELECT reg_id FROM registrations WHERE user_id = ? AND hackathon_id = ?',
+      [req.user.id, hackathon_id]
+    );
+    if (existing.length > 0) return res.status(409).json({ error: 'Already registered' });
 
-  const reg = {
-    id: store.getNextId('registrations'),
-    user_id: req.user.id,
-    hackathon_id,
-    team_id: team_id || null,
-    status: 'confirmed',
-    registered_at: new Date().toISOString().split('T')[0],
-  };
-  store.registrations.push(reg);
-  res.status(201).json({ message: 'Registered successfully', registration: reg });
+    const [result] = await db.query(
+      'INSERT INTO registrations (user_id, hackathon_id, status) VALUES (?, ?, ?)',
+      [req.user.id, hackathon_id, 'confirmed']
+    );
+    res.status(201).json({ message: 'Registered successfully', id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// DELETE /api/registrations/:id  (cancel own registration)
-router.delete('/:id', authenticate, (req, res) => {
-  const idx = store.registrations.findIndex(r => r.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Registration not found' });
-  if (store.registrations[idx].user_id !== req.user.id) return res.status(403).json({ error: 'Not your registration' });
+// DELETE /api/registrations/:id
+router.delete('/:id', authenticate, async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT * FROM registrations WHERE reg_id = ?', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Registration not found' });
+    if (rows[0].user_id !== req.user.id) return res.status(403).json({ error: 'Not your registration' });
 
-  store.registrations.splice(idx, 1);
-  res.json({ message: 'Registration cancelled' });
+    await db.query('DELETE FROM registrations WHERE reg_id = ?', [req.params.id]);
+    res.json({ message: 'Registration cancelled' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

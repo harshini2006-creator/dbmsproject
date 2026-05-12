@@ -1,77 +1,66 @@
 const router = require('express').Router();
-const store = require('../data/store');
+const db = require('../db');
 const { authenticate, authorize } = require('../middleware/auth');
 
-// GET /api/results?hackathon_id=  or  ?submission_id=
-router.get('/', (req, res) => {
-  let list = store.results;
-  if (req.query.submission_id) list = list.filter(r => r.submission_id === parseInt(req.query.submission_id));
-  if (req.query.hackathon_id) {
-    const hackId = parseInt(req.query.hackathon_id);
-    const subIds = store.submissions.filter(s => s.hackathon_id === hackId).map(s => s.id);
-    list = list.filter(r => subIds.includes(r.submission_id));
+// GET /api/results?hackathon_id=
+router.get('/', async (req, res) => {
+  try {
+    let query = `
+      SELECT r.*, t.team_name, h.title AS hackathon_title
+      FROM results r
+      LEFT JOIN teams t ON t.team_id = r.team_id
+      LEFT JOIN hackathons h ON h.hackathon_id = r.hackathon_id
+    `;
+    const params = [];
+    if (req.query.hackathon_id) { query += ' WHERE r.hackathon_id = ?'; params.push(req.query.hackathon_id); }
+    query += ' ORDER BY r.position ASC';
+    const [rows] = await db.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  const result = list.map(r => {
-    const sub = store.submissions.find(s => s.id === r.submission_id);
-    const team = sub ? store.teams.find(t => t.id === sub.team_id) : null;
-    const judge = store.users.find(u => u.id === r.judge_id);
-    const h = sub ? store.hackathons.find(x => x.id === sub.hackathon_id) : null;
-    return { ...r, submission_title: sub?.title, team_name: team?.name, judge_name: judge?.name, hackathon_title: h?.title };
-  }).sort((a, b) => b.total - a.total);
-
-  res.json(result);
 });
 
-// GET /api/results/:id
-router.get('/:id', (req, res) => {
-  const r = store.results.find(r => r.id === parseInt(req.params.id));
-  if (!r) return res.status(404).json({ error: 'Result not found' });
+// POST /api/results
+router.post('/', authenticate, authorize('Organizer', 'Judge'), async (req, res) => {
+  const { hackathon_id, team_id, position, remarks } = req.body;
+  if (!hackathon_id || !team_id || !position)
+    return res.status(400).json({ error: 'hackathon_id, team_id, position are required' });
 
-  const sub = store.submissions.find(s => s.id === r.submission_id);
-  const team = sub ? store.teams.find(t => t.id === sub.team_id) : null;
-  const judge = store.users.find(u => u.id === r.judge_id);
-  res.json({ ...r, submission_title: sub?.title, team_name: team?.name, judge_name: judge?.name });
-});
-
-// POST /api/results  (Judge submits evaluation)
-router.post('/', authenticate, authorize('Judge'), (req, res) => {
-  const { submission_id, scores, feedback } = req.body;
-  if (!submission_id || !scores) return res.status(400).json({ error: 'submission_id and scores are required' });
-
-  const exists = store.results.find(r => r.submission_id === submission_id && r.judge_id === req.user.id);
-  if (exists) return res.status(409).json({ error: 'Already evaluated this submission' });
-
-  const total = Object.values(scores).reduce((sum, v) => sum + Number(v), 0);
-  const result = {
-    id: store.getNextId('results'),
-    submission_id,
-    judge_id: req.user.id,
-    scores,
-    total,
-    feedback: feedback || '',
-  };
-  store.results.push(result);
-
-  // Mark submission as evaluated
-  const sub = store.submissions.find(s => s.id === submission_id);
-  if (sub) sub.status = 'evaluated';
-
-  res.status(201).json({ message: 'Evaluation submitted', result });
-});
-
-// PUT /api/results/:id  (Judge updates own evaluation)
-router.put('/:id', authenticate, authorize('Judge'), (req, res) => {
-  const r = store.results.find(r => r.id === parseInt(req.params.id));
-  if (!r) return res.status(404).json({ error: 'Result not found' });
-  if (r.judge_id !== req.user.id) return res.status(403).json({ error: 'Not your evaluation' });
-
-  if (req.body.scores) {
-    r.scores = req.body.scores;
-    r.total = Object.values(req.body.scores).reduce((sum, v) => sum + Number(v), 0);
+  try {
+    const [result] = await db.query(
+      'INSERT INTO results (hackathon_id, team_id, position, remarks) VALUES (?, ?, ?, ?)',
+      [hackathon_id, team_id, position, remarks || null]
+    );
+    res.status(201).json({ message: 'Result added', id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  if (req.body.feedback !== undefined) r.feedback = req.body.feedback;
-  res.json({ message: 'Evaluation updated', result: r });
+});
+
+// PUT /api/results/:id
+router.put('/:id', authenticate, authorize('Organizer', 'Judge'), async (req, res) => {
+  try {
+    const { position, remarks } = req.body;
+    await db.query(
+      'UPDATE results SET position = COALESCE(?, position), remarks = COALESCE(?, remarks) WHERE result_id = ?',
+      [position || null, remarks ?? null, req.params.id]
+    );
+    res.json({ message: 'Result updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/results/:id
+router.delete('/:id', authenticate, authorize('Organizer'), async (req, res) => {
+  try {
+    const [result] = await db.query('DELETE FROM results WHERE result_id = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Result not found' });
+    res.json({ message: 'Result deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

@@ -1,59 +1,65 @@
 const router = require('express').Router();
-const store = require('../data/store');
+const db = require('../db');
 const { authenticate, authorize } = require('../middleware/auth');
 
 // GET /api/prizes?hackathon_id=
-router.get('/', (req, res) => {
-  let list = store.prizes;
-  if (req.query.hackathon_id) list = list.filter(p => p.hackathon_id === parseInt(req.query.hackathon_id));
-
-  const result = list.map(p => {
-    const h = store.hackathons.find(x => x.id === p.hackathon_id);
-    return { ...p, hackathon_title: h?.title };
-  }).sort((a, b) => a.rank - b.rank);
-
-  res.json(result);
+router.get('/', async (req, res) => {
+  try {
+    let query = `
+      SELECT p.*, h.title AS hackathon_title
+      FROM prizes p
+      LEFT JOIN hackathons h ON h.hackathon_id = p.hackathon_id
+    `;
+    const params = [];
+    if (req.query.hackathon_id) { query += ' WHERE p.hackathon_id = ?'; params.push(req.query.hackathon_id); }
+    query += ' ORDER BY p.position ASC';
+    const [rows] = await db.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// GET /api/prizes/:id
-router.get('/:id', (req, res) => {
-  const p = store.prizes.find(p => p.id === parseInt(req.params.id));
-  if (!p) return res.status(404).json({ error: 'Prize not found' });
-  res.json(p);
-});
+// POST /api/prizes
+router.post('/', authenticate, authorize('Organizer'), async (req, res) => {
+  const { hackathon_id, position, reward } = req.body;
+  if (!hackathon_id || !position || !reward)
+    return res.status(400).json({ error: 'hackathon_id, position, reward are required' });
 
-// POST /api/prizes  (Organizer sets prize structure)
-router.post('/', authenticate, authorize('Organizer'), (req, res) => {
-  const { hackathon_id, rank, title, amount, description } = req.body;
-  if (!hackathon_id || !rank || !title || !amount)
-    return res.status(400).json({ error: 'hackathon_id, rank, title, amount are required' });
-
-  const prize = {
-    id: store.getNextId('prizes'),
-    hackathon_id, rank, title, amount,
-    description: description || '',
-  };
-  store.prizes.push(prize);
-  res.status(201).json({ message: 'Prize added', prize });
+  try {
+    const [result] = await db.query(
+      'INSERT INTO prizes (hackathon_id, position, reward) VALUES (?, ?, ?)',
+      [hackathon_id, position, reward]
+    );
+    res.status(201).json({ message: 'Prize added', id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PUT /api/prizes/:id
-router.put('/:id', authenticate, authorize('Organizer'), (req, res) => {
-  const p = store.prizes.find(p => p.id === parseInt(req.params.id));
-  if (!p) return res.status(404).json({ error: 'Prize not found' });
-
-  if (req.body.title) p.title = req.body.title;
-  if (req.body.amount) p.amount = req.body.amount;
-  if (req.body.description !== undefined) p.description = req.body.description;
-  res.json({ message: 'Prize updated', prize: p });
+router.put('/:id', authenticate, authorize('Organizer'), async (req, res) => {
+  try {
+    const { position, reward } = req.body;
+    await db.query(
+      'UPDATE prizes SET position = COALESCE(?, position), reward = COALESCE(?, reward) WHERE prize_id = ?',
+      [position || null, reward || null, req.params.id]
+    );
+    res.json({ message: 'Prize updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // DELETE /api/prizes/:id
-router.delete('/:id', authenticate, authorize('Organizer'), (req, res) => {
-  const idx = store.prizes.findIndex(p => p.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Prize not found' });
-  store.prizes.splice(idx, 1);
-  res.json({ message: 'Prize deleted' });
+router.delete('/:id', authenticate, authorize('Organizer'), async (req, res) => {
+  try {
+    const [result] = await db.query('DELETE FROM prizes WHERE prize_id = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Prize not found' });
+    res.json({ message: 'Prize deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

@@ -1,80 +1,84 @@
 const router = require('express').Router();
-const store = require('../data/store');
+const db = require('../db');
 const { authenticate, authorize } = require('../middleware/auth');
 
 // GET /api/submissions?hackathon_id=
-router.get('/', authenticate, (req, res) => {
-  let list = store.submissions;
-  if (req.query.hackathon_id) list = list.filter(s => s.hackathon_id === parseInt(req.query.hackathon_id));
-
-  const result = list.map(s => {
-    const team = store.teams.find(t => t.id === s.team_id);
-    const h = store.hackathons.find(x => x.id === s.hackathon_id);
-    return { ...s, team_name: team?.name, hackathon_title: h?.title };
-  });
-  res.json(result);
+router.get('/', authenticate, async (req, res) => {
+  try {
+    let query = `
+      SELECT s.*, t.team_name, h.title AS hackathon_title
+      FROM submissions s
+      LEFT JOIN teams t ON t.team_id = s.team_id
+      LEFT JOIN hackathons h ON h.hackathon_id = s.hackathon_id
+    `;
+    const params = [];
+    if (req.query.hackathon_id) { query += ' WHERE s.hackathon_id = ?'; params.push(req.query.hackathon_id); }
+    const [rows] = await db.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/submissions/:id
-router.get('/:id', authenticate, (req, res) => {
-  const s = store.submissions.find(s => s.id === parseInt(req.params.id));
-  if (!s) return res.status(404).json({ error: 'Submission not found' });
-
-  const team = store.teams.find(t => t.id === s.team_id);
-  const h = store.hackathons.find(x => x.id === s.hackathon_id);
-  const result = store.results.find(r => r.submission_id === s.id);
-  res.json({ ...s, team_name: team?.name, hackathon_title: h?.title, result: result || null });
+router.get('/:id', authenticate, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT s.*, t.team_name, h.title AS hackathon_title
+      FROM submissions s
+      LEFT JOIN teams t ON t.team_id = s.team_id
+      LEFT JOIN hackathons h ON h.hackathon_id = s.hackathon_id
+      WHERE s.submission_id = ?
+    `, [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST /api/submissions  (User submits project)
-router.post('/', authenticate, authorize('User'), (req, res) => {
-  const { team_id, hackathon_id, title, description, repo_url, demo_url, tech } = req.body;
-  if (!team_id || !hackathon_id || !title || !description)
-    return res.status(400).json({ error: 'team_id, hackathon_id, title, description are required' });
+// POST /api/submissions
+router.post('/', authenticate, authorize('User'), async (req, res) => {
+  const { team_id, hackathon_id, project_title, github_link } = req.body;
+  if (!team_id || !hackathon_id || !project_title)
+    return res.status(400).json({ error: 'team_id, hackathon_id, project_title are required' });
 
-  const team = store.teams.find(t => t.id === team_id);
-  if (!team) return res.status(404).json({ error: 'Team not found' });
-  if (team.lead_user_id !== req.user.id) return res.status(403).json({ error: 'Only team lead can submit' });
+  try {
+    const [teams] = await db.query('SELECT leader_id FROM teams WHERE team_id = ?', [team_id]);
+    if (teams.length === 0) return res.status(404).json({ error: 'Team not found' });
+    if (teams[0].leader_id !== req.user.id) return res.status(403).json({ error: 'Only team leader can submit' });
 
-  const exists = store.submissions.find(s => s.team_id === team_id && s.hackathon_id === hackathon_id);
-  if (exists) return res.status(409).json({ error: 'Team already submitted for this hackathon' });
+    const [existing] = await db.query(
+      'SELECT submission_id FROM submissions WHERE team_id = ? AND hackathon_id = ?',
+      [team_id, hackathon_id]
+    );
+    if (existing.length > 0) return res.status(409).json({ error: 'Team already submitted' });
 
-  const submission = {
-    id: store.getNextId('submissions'),
-    team_id, hackathon_id, title, description,
-    repo_url: repo_url || null,
-    demo_url: demo_url || null,
-    tech: tech || null,
-    status: 'submitted',
-    submitted_at: new Date().toISOString().split('T')[0],
-  };
-  store.submissions.push(submission);
-  res.status(201).json({ message: 'Project submitted', submission });
-});
-
-// PUT /api/submissions/:id  (team lead updates)
-router.put('/:id', authenticate, authorize('User'), (req, res) => {
-  const s = store.submissions.find(s => s.id === parseInt(req.params.id));
-  if (!s) return res.status(404).json({ error: 'Submission not found' });
-
-  const team = store.teams.find(t => t.id === s.team_id);
-  if (!team || team.lead_user_id !== req.user.id) return res.status(403).json({ error: 'Only team lead can update submission' });
-
-  const fields = ['title', 'description', 'repo_url', 'demo_url', 'tech'];
-  fields.forEach(f => { if (req.body[f] !== undefined) s[f] = req.body[f]; });
-  res.json({ message: 'Submission updated', submission: s });
+    const [result] = await db.query(
+      'INSERT INTO submissions (team_id, hackathon_id, project_title, github_link) VALUES (?, ?, ?, ?)',
+      [team_id, hackathon_id, project_title, github_link || null]
+    );
+    res.status(201).json({ message: 'Project submitted', id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // DELETE /api/submissions/:id
-router.delete('/:id', authenticate, authorize('User'), (req, res) => {
-  const idx = store.submissions.findIndex(s => s.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Submission not found' });
+router.delete('/:id', authenticate, authorize('User'), async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      'SELECT s.submission_id, t.leader_id FROM submissions s JOIN teams t ON t.team_id = s.team_id WHERE s.submission_id = ?',
+      [req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+    if (rows[0].leader_id !== req.user.id) return res.status(403).json({ error: 'Not authorized' });
 
-  const team = store.teams.find(t => t.id === store.submissions[idx].team_id);
-  if (!team || team.lead_user_id !== req.user.id) return res.status(403).json({ error: 'Not authorized' });
-
-  store.submissions.splice(idx, 1);
-  res.json({ message: 'Submission deleted' });
+    await db.query('DELETE FROM submissions WHERE submission_id = ?', [req.params.id]);
+    res.json({ message: 'Submission deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

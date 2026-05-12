@@ -1,44 +1,53 @@
 const router = require('express').Router();
-const store = require('../data/store');
+const db = require('../db');
 const { authenticate } = require('../middleware/auth');
 
 // GET /api/team-members?team_id=
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   if (!req.query.team_id) return res.status(400).json({ error: 'team_id query param required' });
-  const members = store.team_members.filter(m => m.team_id === parseInt(req.query.team_id));
-  res.json(members);
+  try {
+    const [rows] = await db.query(
+      'SELECT tm.user_id, u.name, u.email FROM team_members tm LEFT JOIN users u ON u.user_id = tm.user_id WHERE tm.team_id = ?',
+      [req.query.team_id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST /api/team-members  (team lead adds a member)
-router.post('/', authenticate, (req, res) => {
-  const { team_id, user_name, role } = req.body;
-  if (!team_id || !user_name) return res.status(400).json({ error: 'team_id and user_name required' });
+// POST /api/team-members
+router.post('/', authenticate, async (req, res) => {
+  const { team_id, user_id } = req.body;
+  if (!team_id || !user_id) return res.status(400).json({ error: 'team_id and user_id required' });
 
-  const team = store.teams.find(t => t.id === team_id);
-  if (!team) return res.status(404).json({ error: 'Team not found' });
-  if (team.lead_user_id !== req.user.id) return res.status(403).json({ error: 'Only team lead can add members' });
+  try {
+    const [teams] = await db.query('SELECT leader_id FROM teams WHERE team_id = ?', [team_id]);
+    if (teams.length === 0) return res.status(404).json({ error: 'Team not found' });
+    if (teams[0].leader_id !== req.user.id) return res.status(403).json({ error: 'Only team leader can add members' });
 
-  const member = {
-    id: store.getNextId('team_members'),
-    team_id,
-    user_name,
-    role: role || 'Member',
-  };
-  store.team_members.push(member);
-  res.status(201).json({ message: 'Member added', member });
+    await db.query('INSERT INTO team_members (team_id, user_id) VALUES (?, ?)', [team_id, user_id]);
+    res.status(201).json({ message: 'Member added' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// DELETE /api/team-members/:id
-router.delete('/:id', authenticate, (req, res) => {
-  const idx = store.team_members.findIndex(m => m.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Member not found' });
+// DELETE /api/team-members
+router.delete('/', authenticate, async (req, res) => {
+  const { team_id, user_id } = req.body;
+  if (!team_id || !user_id) return res.status(400).json({ error: 'team_id and user_id required' });
 
-  const member = store.team_members[idx];
-  const team = store.teams.find(t => t.id === member.team_id);
-  if (!team || team.lead_user_id !== req.user.id) return res.status(403).json({ error: 'Only team lead can remove members' });
+  try {
+    const [teams] = await db.query('SELECT leader_id FROM teams WHERE team_id = ?', [team_id]);
+    if (!teams.length || teams[0].leader_id !== req.user.id)
+      return res.status(403).json({ error: 'Only team leader can remove members' });
 
-  store.team_members.splice(idx, 1);
-  res.json({ message: 'Member removed' });
+    await db.query('DELETE FROM team_members WHERE team_id = ? AND user_id = ?', [team_id, user_id]);
+    res.json({ message: 'Member removed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

@@ -1,86 +1,98 @@
 const router = require('express').Router();
-const store = require('../data/store');
+const db = require('../db');
 const { authenticate, authorize } = require('../middleware/auth');
 
 // GET /api/teams?hackathon_id=
-router.get('/', (req, res) => {
-  let list = store.teams;
-  if (req.query.hackathon_id) list = list.filter(t => t.hackathon_id === parseInt(req.query.hackathon_id));
-
-  const result = list.map(t => {
-    const h = store.hackathons.find(x => x.id === t.hackathon_id);
-    const members = store.team_members.filter(m => m.team_id === t.id);
-    return { ...t, hackathon_title: h?.title, member_count: members.length };
-  });
-  res.json(result);
+router.get('/', async (req, res) => {
+  try {
+    let query = `
+      SELECT t.*, h.title AS hackathon_title, COUNT(tm.user_id) AS member_count
+      FROM teams t
+      LEFT JOIN hackathons h ON h.hackathon_id = t.hackathon_id
+      LEFT JOIN team_members tm ON tm.team_id = t.team_id
+    `;
+    const params = [];
+    if (req.query.hackathon_id) { query += ' WHERE t.hackathon_id = ?'; params.push(req.query.hackathon_id); }
+    query += ' GROUP BY t.team_id';
+    const [rows] = await db.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/teams/:id
-router.get('/:id', (req, res) => {
-  const team = store.teams.find(t => t.id === parseInt(req.params.id));
-  if (!team) return res.status(404).json({ error: 'Team not found' });
+router.get('/:id', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT t.*, h.title AS hackathon_title
+      FROM teams t
+      LEFT JOIN hackathons h ON h.hackathon_id = t.hackathon_id
+      WHERE t.team_id = ?
+    `, [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Team not found' });
 
-  const h = store.hackathons.find(x => x.id === team.hackathon_id);
-  const members = store.team_members.filter(m => m.team_id === team.id);
-  res.json({ ...team, hackathon_title: h?.title, members });
-});
-
-// POST /api/teams  (User creates a team)
-router.post('/', authenticate, authorize('User'), (req, res) => {
-  const { hackathon_id, name, tech, members } = req.body;
-  if (!hackathon_id || !name) return res.status(400).json({ error: 'hackathon_id and name are required' });
-
-  const team = {
-    id: store.getNextId('teams'),
-    hackathon_id,
-    name,
-    lead_user_id: req.user.id,
-    tech: tech || '',
-    created_at: new Date().toISOString().split('T')[0],
-  };
-  store.teams.push(team);
-
-  // Add members
-  if (members && members.length > 0) {
-    members.forEach((m, i) => {
-      store.team_members.push({
-        id: store.getNextId('team_members'),
-        team_id: team.id,
-        user_name: m.user_name,
-        role: i === 0 ? 'Team Lead' : (m.role || 'Member'),
-      });
-    });
+    const [members] = await db.query(
+      'SELECT tm.user_id, u.name, u.email FROM team_members tm LEFT JOIN users u ON u.user_id = tm.user_id WHERE tm.team_id = ?',
+      [req.params.id]
+    );
+    res.json({ ...rows[0], members });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  // Link team to existing registration
-  const reg = store.registrations.find(r => r.user_id === req.user.id && r.hackathon_id === hackathon_id);
-  if (reg) reg.team_id = team.id;
-
-  res.status(201).json({ message: 'Team created', team });
 });
 
-// PUT /api/teams/:id  (team lead only)
-router.put('/:id', authenticate, (req, res) => {
-  const team = store.teams.find(t => t.id === parseInt(req.params.id));
-  if (!team) return res.status(404).json({ error: 'Team not found' });
-  if (team.lead_user_id !== req.user.id) return res.status(403).json({ error: 'Only team lead can update' });
+// POST /api/teams
+router.post('/', authenticate, authorize('User'), async (req, res) => {
+  const { hackathon_id, team_name } = req.body;
+  if (!hackathon_id || !team_name) return res.status(400).json({ error: 'hackathon_id and team_name are required' });
 
-  if (req.body.name) team.name = req.body.name;
-  if (req.body.tech !== undefined) team.tech = req.body.tech;
-  res.json({ message: 'Team updated', team });
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [result] = await conn.query(
+      'INSERT INTO teams (team_name, hackathon_id, leader_id) VALUES (?, ?, ?)',
+      [team_name, hackathon_id, req.user.id]
+    );
+    const teamId = result.insertId;
+    await conn.query('INSERT INTO team_members (team_id, user_id) VALUES (?, ?)', [teamId, req.user.id]);
+    await conn.commit();
+    res.status(201).json({ message: 'Team created', id: teamId });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: err.message });
+  } finally {
+    conn.release();
+  }
+});
+
+// PUT /api/teams/:id
+router.put('/:id', authenticate, async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT leader_id FROM teams WHERE team_id = ?', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Team not found' });
+    if (rows[0].leader_id !== req.user.id) return res.status(403).json({ error: 'Only team leader can update' });
+
+    await db.query('UPDATE teams SET team_name = COALESCE(?, team_name) WHERE team_id = ?', [req.body.team_name || null, req.params.id]);
+    res.json({ message: 'Team updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // DELETE /api/teams/:id
-router.delete('/:id', authenticate, (req, res) => {
-  const idx = store.teams.findIndex(t => t.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Team not found' });
-  if (store.teams[idx].lead_user_id !== req.user.id) return res.status(403).json({ error: 'Only team lead can delete' });
+router.delete('/:id', authenticate, async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT leader_id FROM teams WHERE team_id = ?', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Team not found' });
+    if (rows[0].leader_id !== req.user.id) return res.status(403).json({ error: 'Only team leader can delete' });
 
-  const teamId = store.teams[idx].id;
-  store.teams.splice(idx, 1);
-  // Remove members
-  store.team_members = store.team_members.filter(m => m.team_id !== teamId);
-  res.json({ message: 'Team deleted' });
+    await db.query('DELETE FROM team_members WHERE team_id = ?', [req.params.id]);
+    await db.query('DELETE FROM teams WHERE team_id = ?', [req.params.id]);
+    res.json({ message: 'Team deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

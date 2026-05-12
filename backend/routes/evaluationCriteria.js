@@ -1,55 +1,71 @@
 const router = require('express').Router();
-const store = require('../data/store');
+const db = require('../db');
 const { authenticate, authorize } = require('../middleware/auth');
 
 // GET /api/evaluation-criteria?hackathon_id=
-router.get('/', (req, res) => {
-  let list = store.evaluation_criteria;
-  if (req.query.hackathon_id) list = list.filter(c => c.hackathon_id === parseInt(req.query.hackathon_id));
-  res.json(list);
+router.get('/', async (req, res) => {
+  try {
+    let query = 'SELECT * FROM evaluation_criteria';
+    const params = [];
+    if (req.query.hackathon_id) { query += ' WHERE hackathon_id = ?'; params.push(req.query.hackathon_id); }
+    const [rows] = await db.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/evaluation-criteria/:id
-router.get('/:id', (req, res) => {
-  const c = store.evaluation_criteria.find(c => c.id === parseInt(req.params.id));
-  if (!c) return res.status(404).json({ error: 'Criteria not found' });
-  res.json(c);
+router.get('/:id', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT * FROM evaluation_criteria WHERE criteria_id = ?', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Criteria not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST /api/evaluation-criteria  (Organizer only)
-router.post('/', authenticate, authorize('Organizer'), (req, res) => {
-  const { hackathon_id, name, description, max_score } = req.body;
-  if (!hackathon_id || !name || !max_score)
-    return res.status(400).json({ error: 'hackathon_id, name, max_score are required' });
+// POST /api/evaluation-criteria
+router.post('/', authenticate, authorize('Organizer'), async (req, res) => {
+  const { hackathon_id, criteria_name, max_score } = req.body;
+  if (!hackathon_id || !criteria_name || !max_score)
+    return res.status(400).json({ error: 'hackathon_id, criteria_name, max_score are required' });
 
-  const criteria = {
-    id: store.getNextId('evaluation_criteria'),
-    hackathon_id,
-    name,
-    description: description || '',
-    max_score,
-  };
-  store.evaluation_criteria.push(criteria);
-  res.status(201).json({ message: 'Criteria added', criteria });
+  try {
+    const [result] = await db.query(
+      'INSERT INTO evaluation_criteria (hackathon_id, criteria_name, max_score) VALUES (?, ?, ?)',
+      [hackathon_id, criteria_name, max_score]
+    );
+    res.status(201).json({ message: 'Criteria added', id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PUT /api/evaluation-criteria/:id
-router.put('/:id', authenticate, authorize('Organizer'), (req, res) => {
-  const c = store.evaluation_criteria.find(c => c.id === parseInt(req.params.id));
-  if (!c) return res.status(404).json({ error: 'Criteria not found' });
-
-  if (req.body.name) c.name = req.body.name;
-  if (req.body.description !== undefined) c.description = req.body.description;
-  if (req.body.max_score) c.max_score = req.body.max_score;
-  res.json({ message: 'Criteria updated', criteria: c });
+router.put('/:id', authenticate, authorize('Organizer'), async (req, res) => {
+  try {
+    const { criteria_name, max_score } = req.body;
+    await db.query(
+      'UPDATE evaluation_criteria SET criteria_name = COALESCE(?, criteria_name), max_score = COALESCE(?, max_score) WHERE criteria_id = ?',
+      [criteria_name || null, max_score || null, req.params.id]
+    );
+    res.json({ message: 'Criteria updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // DELETE /api/evaluation-criteria/:id
-router.delete('/:id', authenticate, authorize('Organizer'), (req, res) => {
-  const idx = store.evaluation_criteria.findIndex(c => c.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Criteria not found' });
-  store.evaluation_criteria.splice(idx, 1);
-  res.json({ message: 'Criteria deleted' });
+router.delete('/:id', authenticate, authorize('Organizer'), async (req, res) => {
+  try {
+    const [result] = await db.query('DELETE FROM evaluation_criteria WHERE criteria_id = ?', [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Criteria not found' });
+    res.json({ message: 'Criteria deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

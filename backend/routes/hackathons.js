@@ -1,70 +1,92 @@
 const router = require('express').Router();
-const store = require('../data/store');
+const db = require('../db');
 const { authenticate, authorize } = require('../middleware/auth');
 
-// GET /api/hackathons?status=upcoming|ongoing|past
-router.get('/', (req, res) => {
-  let list = store.hackathons;
-  if (req.query.status) list = list.filter(h => h.status === req.query.status);
-  const result = list.map(h => {
-    const organizer = store.users.find(u => u.id === h.organizer_id);
-    return { ...h, organizer_name: organizer ? organizer.name : null, organizer_org: organizer ? organizer.org : null };
-  });
-  res.json(result);
+// GET /api/hackathons
+router.get('/', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT h.*, u.name AS organizer_name
+      FROM hackathons h
+      LEFT JOIN users u ON u.user_id = h.created_by
+    `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/hackathons/:id
-router.get('/:id', (req, res) => {
-  const h = store.hackathons.find(h => h.id === parseInt(req.params.id));
-  if (!h) return res.status(404).json({ error: 'Hackathon not found' });
-  const organizer = store.users.find(u => u.id === h.organizer_id);
-  const teams = store.teams.filter(t => t.hackathon_id === h.id).length;
-  const submissions = store.submissions.filter(s => s.hackathon_id === h.id).length;
-  const criteria = store.evaluation_criteria.filter(c => c.hackathon_id === h.id);
-  res.json({ ...h, organizer_name: organizer?.name, organizer_org: organizer?.org, team_count: teams, submission_count: submissions, criteria });
+router.get('/:id', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT h.*, u.name AS organizer_name
+      FROM hackathons h
+      LEFT JOIN users u ON u.user_id = h.created_by
+      WHERE h.hackathon_id = ?
+    `, [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Hackathon not found' });
+
+    const [[{ team_count }]] = await db.query('SELECT COUNT(*) AS team_count FROM teams WHERE hackathon_id = ?', [req.params.id]);
+    const [[{ submission_count }]] = await db.query('SELECT COUNT(*) AS submission_count FROM submissions WHERE hackathon_id = ?', [req.params.id]);
+    const [criteria] = await db.query('SELECT * FROM evaluation_criteria WHERE hackathon_id = ?', [req.params.id]);
+
+    res.json({ ...rows[0], team_count, submission_count, criteria });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST /api/hackathons  (Organizer only)
-router.post('/', authenticate, authorize('Organizer'), (req, res) => {
-  const { title, theme, date_start, date_end, location, prize, description, tags } = req.body;
-  if (!title || !theme || !date_start || !date_end)
-    return res.status(400).json({ error: 'title, theme, date_start, date_end are required' });
+// POST /api/hackathons
+router.post('/', authenticate, authorize('Organizer'), async (req, res) => {
+  const { title, description, location, start_date, end_date, prize_pool } = req.body;
+  if (!title || !start_date || !end_date)
+    return res.status(400).json({ error: 'title, start_date, end_date are required' });
 
-  const hackathon = {
-    id: store.getNextId('hackathons'),
-    title, theme, date_start, date_end,
-    location: location || 'Online',
-    prize: prize || 'TBD',
-    description: description || '',
-    tags: tags || [],
-    status: 'upcoming',
-    participants: 0,
-    organizer_id: req.user.id,
-    created_at: new Date().toISOString().split('T')[0],
-  };
-  store.hackathons.push(hackathon);
-  res.status(201).json({ message: 'Hackathon created', hackathon });
+  try {
+    const [result] = await db.query(
+      'INSERT INTO hackathons (title, description, location, start_date, end_date, prize_pool, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [title, description || null, location || 'Online', start_date, end_date, prize_pool || null, req.user.id]
+    );
+    res.status(201).json({ message: 'Hackathon created', id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// PUT /api/hackathons/:id  (Organizer, own hackathon)
-router.put('/:id', authenticate, authorize('Organizer'), (req, res) => {
-  const h = store.hackathons.find(h => h.id === parseInt(req.params.id));
-  if (!h) return res.status(404).json({ error: 'Hackathon not found' });
-  if (h.organizer_id !== req.user.id) return res.status(403).json({ error: 'Not your hackathon' });
+// PUT /api/hackathons/:id
+router.put('/:id', authenticate, authorize('Organizer'), async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT created_by FROM hackathons WHERE hackathon_id = ?', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Hackathon not found' });
+    if (rows[0].created_by !== req.user.id) return res.status(403).json({ error: 'Not your hackathon' });
 
-  const fields = ['title', 'theme', 'date_start', 'date_end', 'location', 'prize', 'description', 'tags', 'status'];
-  fields.forEach(f => { if (req.body[f] !== undefined) h[f] = req.body[f]; });
-  res.json({ message: 'Hackathon updated', hackathon: h });
+    const fields = ['title', 'description', 'location', 'start_date', 'end_date', 'prize_pool'];
+    const updates = [];
+    const params = [];
+    fields.forEach(f => { if (req.body[f] !== undefined) { updates.push(`${f} = ?`); params.push(req.body[f]); } });
+    if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+    params.push(req.params.id);
+    await db.query(`UPDATE hackathons SET ${updates.join(', ')} WHERE hackathon_id = ?`, params);
+    res.json({ message: 'Hackathon updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// DELETE /api/hackathons/:id  (Organizer, own hackathon)
-router.delete('/:id', authenticate, authorize('Organizer'), (req, res) => {
-  const idx = store.hackathons.findIndex(h => h.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Hackathon not found' });
-  if (store.hackathons[idx].organizer_id !== req.user.id) return res.status(403).json({ error: 'Not your hackathon' });
+// DELETE /api/hackathons/:id
+router.delete('/:id', authenticate, authorize('Organizer'), async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT created_by FROM hackathons WHERE hackathon_id = ?', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Hackathon not found' });
+    if (rows[0].created_by !== req.user.id) return res.status(403).json({ error: 'Not your hackathon' });
 
-  store.hackathons.splice(idx, 1);
-  res.json({ message: 'Hackathon deleted' });
+    await db.query('DELETE FROM hackathons WHERE hackathon_id = ?', [req.params.id]);
+    res.json({ message: 'Hackathon deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
