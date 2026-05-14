@@ -200,3 +200,89 @@ footer { background: var(--text); color: #fff; padding: 2rem 1.5rem 1rem; text-a
   .profile-stats { gap: 1rem; }
   .profile-stat { padding: 1rem 1.25rem; }
 }
+
+/* ── Leaderboard ── */
+.lb-list { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.lb-row { display: grid; grid-template-columns: 60px 1fr 180px 80px 220px; align-items: center; gap: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.5rem; transition: box-shadow 0.2s; }
+.lb-row:hover { box-shadow: var(--shadow); }
+.lb-row-top { border-left: 4px solid var(--primary); background: #fafafe; }
+
+.lb-rank-col { display: flex; align-items: center; justify-content: center; }
+.lb-medal { font-size: 2rem; line-height: 1; }
+.lb-rank-num { font-size: 1.1rem; font-weight: 800; color: var(--text-muted); }
+
+.lb-team-col { display: flex; flex-direction: column; gap: 0.2rem; }
+.lb-team-name { font-size: 1rem; font-weight: 700; color: var(--text); }
+.lb-project { font-size: 0.82rem; color: var(--text-muted); }
+
+.lb-hackathon-col { }
+.lb-members-col { font-size: 0.85rem; color: var(--text-muted); }
+.lb-members { white-space: nowrap; }
+
+.lb-score-col { display: flex; align-items: center; gap: 0.75rem; }
+.lb-score-bar-wrap { flex: 1; background: var(--border); border-radius: 20px; height: 8px; }
+.lb-score-bar { height: 8px; border-radius: 20px; transition: width 0.4s ease; }
+.lb-score-num { font-size: 1rem; font-weight: 800; min-width: 36px; text-align: right; }
+
+@media (max-width: 768px) {
+  .lb-row { grid-template-columns: 50px 1fr 100px; gap: 0.75rem; padding: 0.85rem 1rem; }
+  .lb-hackathon-col, .lb-members-col { display: none; }
+  .lb-score-col { flex-direction: column; align-items: flex-end; gap: 0.25rem; }
+  .lb-score-bar-wrap { width: 80px; }
+}
+
+/* ── Results ── */
+.results-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 2rem; margin-bottom: 2rem; box-shadow: var(--shadow); }
+
+.results-hack-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; gap: 1rem; }
+.results-hack-title { font-size: 1.4rem; font-weight: 800; color: var(--text); margin-bottom: 0.3rem; }
+.results-hack-meta { font-size: 0.85rem; color: var(--text-muted); }
+
+.winners-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.25rem; margin-bottom: 2rem; }
+.winner-card { background: var(--bg); border-radius: var(--radius); padding: 1.5rem; border-top: 4px solid var(--primary); text-align: center; display: flex; flex-direction: column; gap: 0.4rem; }
+.winner-medal { font-size: 2.5rem; }
+.winner-place { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 1px; }
+.winner-team { font-size: 1.05rem; font-weight: 700; }
+.winner-project { font-size: 0.85rem; color: var(--text-muted); }
+.winner-prize { font-size: 1rem; font-weight: 700; color: var(--success); }
+
+.results-sub-title { font-size: 1rem; font-weight: 700; color: var(--text); border-left: 3px solid var(--primary); padding-left: 0.75rem; margin-bottom: 1rem; }
+
+.results-subs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+.result-sub-card { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.result-sub-header { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.result-sub-title { font-weight: 700; font-size: 0.95rem; color: var(--text); }
+.result-score { font-weight: 800; color: var(--primary); font-size: 0.9rem; white-space: nowrap; }
+.result-sub-team { font-size: 0.82rem; color: var(--primary); font-weight: 600; }
+.result-sub-desc { font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; }
+.result-feedback { font-size: 0.8rem; color: var(--text-muted); font-style: italic; border-left: 2px solid var(--border); padding-left: 0.5rem; }
+.result-sub-links { display: flex; gap: 1rem; margin-top: 0.25rem; }
+.result-sub-links a { font-size: 0.82rem; color: var(--primary); font-weight: 600; }
+
+/* ── Announcements ── */
+.ann-section-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 0.75rem; }
+
+.announcement-list { display: flex; flex-direction: column; gap: 1rem; }
+.announcement-card { background: var(--surface); border-radius: var(--radius); padding: 1.5rem; box-shadow: var(--shadow); border-left: 4px solid var(--primary); transition: box-shadow 0.2s; }
+.announcement-card:hover { box-shadow: var(--shadow-lg); }
+.announcement-card.pinned { border-left-color: #f59e0b; background: #fffdf0; }
+
+.ann-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 0.75rem; }
+.ann-title-row { display: flex; align-items: center; gap: 0.5rem; }
+.ann-icon { font-size: 1.2rem; flex-shrink: 0; }
+.ann-title { font-weight: 700; font-size: 1.05rem; color: var(--text); }
+.ann-meta { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+.ann-body { font-size: 0.92rem; color: var(--text-muted); line-height: 1.7; margin-bottom: 0.75rem; }
+.ann-footer { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.ann-tag { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; background: var(--primary-light); color: var(--primary); }
+.ann-tag.tag-alert { background: #fee2e2; color: #dc2626; }
+.ann-tag.tag-update { background: #dcfce7; color: #16a34a; }
+.ann-author { font-size: 0.78rem; color: var(--text-muted); margin-left: auto; }
+
+@media (max-width: 600px) {
+  .results-hack-header { flex-direction: column; }
+  .results-subs-grid { grid-template-columns: 1fr; }
+  .ann-header { flex-direction: column; gap: 0.4rem; }
+  .ann-author { margin-left: 0; }
+}

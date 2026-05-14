@@ -601,19 +601,33 @@ function filterLeaderboard(filter, btn) {
 function renderLeaderboardTable(data) {
   var container = document.getElementById("leaderboard-content");
   if (!container) return;
-  var maxScore = data.length > 0 ? Math.max.apply(null, data.map(function(r) { return r.score; })) : 100;
-  container.innerHTML = '<table class="lb-table"><thead><tr><th>Rank</th><th>Team</th><th>Project</th><th>Hackathon</th><th>Members</th><th>Score</th></tr></thead><tbody>' +
-    data.map(function(r) {
-      var rankClass = r.rank === 1 ? "rank-1" : r.rank === 2 ? "rank-2" : r.rank === 3 ? "rank-3" : "";
-      var medal = r.rank === 1 ? "gold" : r.rank === 2 ? "silver" : r.rank === 3 ? "bronze" : "";
+  if (data.length === 0) { container.innerHTML = '<p class="empty-msg">No leaderboard data yet.</p>'; return; }
+  var maxScore = Math.max.apply(null, data.map(function(r) { return r.score; }));
+  var medals = ["🥇", "🥈", "🥉"];
+  var rankColors = ["#f59e0b", "#9ca3af", "#b45309"];
+
+  container.innerHTML = '<div class="lb-list">' +
+    data.map(function(r, i) {
       var pct = Math.round((r.score / maxScore) * 100);
-      return '<tr><td><span class="lb-rank ' + rankClass + '">' + medal + ' #' + r.rank + '</span></td>' +
-        '<td><strong>' + r.team_name + '</strong></td>' +
-        '<td>' + r.project + '</td>' +
-        '<td><span class="tag">' + r.hackathon + '</span></td>' +
-        '<td>' + r.members + '</td>' +
-        '<td><div style="display:flex;align-items:center;gap:0.5rem"><div class="score-bar-wrap"><div class="score-bar" style="width:' + pct + '%"></div></div><strong>' + r.score + '</strong></div></td></tr>';
-    }).join("") + '</tbody></table>';
+      var isTop = r.rank <= 3;
+      return '<div class="lb-row' + (isTop ? " lb-row-top" : "") + '">' +
+        '<div class="lb-rank-col">' +
+          (isTop
+            ? '<span class="lb-medal">' + medals[r.rank - 1] + '</span>'
+            : '<span class="lb-rank-num">#' + r.rank + '</span>') +
+        '</div>' +
+        '<div class="lb-team-col">' +
+          '<div class="lb-team-name">' + r.team_name + '</div>' +
+          '<div class="lb-project">' + r.project + '</div>' +
+        '</div>' +
+        '<div class="lb-hackathon-col"><span class="tag">' + r.hackathon + '</span></div>' +
+        '<div class="lb-members-col"><span class="lb-members">👥 ' + r.members + '</span></div>' +
+        '<div class="lb-score-col">' +
+          '<div class="lb-score-bar-wrap"><div class="lb-score-bar" style="width:' + pct + '%;background:' + (isTop ? rankColors[r.rank-1] || "var(--primary)" : "var(--primary)") + '"></div></div>' +
+          '<span class="lb-score-num" style="color:' + (isTop ? rankColors[r.rank-1] || "var(--primary)" : "var(--primary)") + '">' + r.score + '</span>' +
+        '</div>' +
+      '</div>';
+    }).join("") + '</div>';
 }
 
 // =============================================================================
@@ -624,40 +638,59 @@ function renderResults() {
   if (!container) return;
   var pastHackathons = db_hackathons.filter(function(h) { return h.status === "past"; });
   if (pastHackathons.length === 0) { container.innerHTML = '<p class="empty-msg">No results available yet.</p>'; return; }
+
   container.innerHTML = pastHackathons.map(function(h) {
     var winners = db_winners.filter(function(w) { return w.hackathon_id === h.id; });
     var submissions = db_submissions.filter(function(s) { return s.hackathon_id === h.id; });
-    var medalEmoji = { gold: "trophy", silver: "second_place", bronze: "third_place" };
+    var medalEmoji = { gold: "🥇", silver: "🥈", bronze: "🥉" };
     var borderColor = { gold: "#f59e0b", silver: "#9ca3af", bronze: "#b45309" };
-    return '<div id="results-hackathon-' + h.id + '" style="margin-bottom:3rem">' +
-      '<div class="results-section-title">' + h.title + ' <span class="tag">' + h.date + '</span></div>' +
-      '<div class="winners-grid">' +
+
+    return '<div id="results-hackathon-' + h.id + '" class="results-block">' +
+      // Hackathon header
+      '<div class="results-hack-header">' +
+        '<div>' +
+          '<h3 class="results-hack-title">' + h.title + '</h3>' +
+          '<span class="results-hack-meta">📅 ' + h.date + ' &nbsp;|&nbsp; 📍 ' + h.location + ' &nbsp;|&nbsp; 💰 ' + h.prize + '</span>' +
+        '</div>' +
+        '<span class="status-badge status-past">Completed</span>' +
+      '</div>' +
+
+      // Winners podium
+      (winners.length > 0 ? '<div class="winners-grid">' +
         winners.map(function(w) {
           return '<div class="winner-card" style="border-top-color:' + (borderColor[w.medal] || "var(--primary)") + '">' +
-            '<div class="winner-medal">' + (w.medal === "gold" ? "trophy" : w.medal === "silver" ? "silver" : "bronze") + '</div>' +
+            '<div class="winner-medal">' + (medalEmoji[w.medal] || "🏅") + '</div>' +
             '<div class="winner-place">' + (w.rank === 1 ? "1st Place" : w.rank === 2 ? "2nd Place" : "3rd Place") + '</div>' +
             '<div class="winner-team">' + w.team_name + '</div>' +
             '<div class="winner-project">' + w.project + '</div>' +
-            '<div class="winner-prize">' + w.prize + '</div></div>';
-        }).join("") +
-      '</div>' +
-      (submissions.length > 0 ? '<div class="results-section-title" style="font-size:1rem">All Submissions</div>' +
-        submissions.map(function(s) {
-          var team = db_teams.find(function(t) { return t.id === s.team_id; });
-          var result = db_results.find(function(r) { return r.submission_id === s.id; });
-          return '<div class="submission-card">' +
-            '<div class="sub-header"><span class="sub-title">' + s.title + '</span>' +
-            (result ? '<strong style="color:var(--primary)">' + result.total + ' pts</strong>' : '<span class="status-badge status-upcoming">Pending</span>') + '</div>' +
-            '<div class="sub-hackathon">' + (team ? team.name : "Unknown Team") + '</div>' +
-            '<div class="sub-desc">' + s.description + '</div>' +
-            '<div class="card-tags"><span class="tag">' + s.tech + '</span></div>' +
-            (result ? '<div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.5rem;font-style:italic">"' + result.feedback + '"</div>' : '') +
-            '<div class="sub-links">' +
-            (s.repo_url ? '<a href="' + s.repo_url + '" target="_blank">GitHub Repo</a>' : '') +
-            (s.demo_url ? '<a href="' + s.demo_url + '" target="_blank">Live Demo</a>' : '') +
-            '</div></div>';
-        }).join("") : '') +
-      '</div>';
+            '<div class="winner-prize">' + w.prize + '</div>' +
+          '</div>';
+        }).join("") + '</div>' : '') +
+
+      // All submissions
+      (submissions.length > 0 ?
+        '<div class="results-sub-title">All Submissions</div>' +
+        '<div class="results-subs-grid">' +
+          submissions.map(function(s) {
+            var team   = db_teams.find(function(t) { return t.id === s.team_id; });
+            var result = db_results.find(function(r) { return r.submission_id === s.id; });
+            return '<div class="result-sub-card">' +
+              '<div class="result-sub-header">' +
+                '<span class="result-sub-title">' + s.title + '</span>' +
+                (result ? '<span class="result-score">⭐ ' + result.total + ' pts</span>' : '<span class="status-badge status-upcoming">Pending</span>') +
+              '</div>' +
+              '<div class="result-sub-team">👥 ' + (team ? team.name : "Unknown Team") + '</div>' +
+              '<div class="result-sub-desc">' + s.description + '</div>' +
+              '<div class="card-tags"><span class="tag">' + s.tech + '</span></div>' +
+              (result ? '<div class="result-feedback">"' + result.feedback + '"</div>' : '') +
+              '<div class="result-sub-links">' +
+                (s.repo_url ? '<a href="' + s.repo_url + '" target="_blank">🔗 GitHub</a>' : '') +
+                (s.demo_url ? '<a href="' + s.demo_url + '" target="_blank">🚀 Demo</a>' : '') +
+              '</div>' +
+            '</div>';
+          }).join("") +
+        '</div>' : '') +
+    '</div>';
   }).join("");
 }
 
@@ -668,19 +701,43 @@ function renderAnnouncements() {
   var container = document.getElementById("announcements-content");
   if (!container) return;
   var sorted = db_announcements.slice().sort(function(a, b) { return b.pinned - a.pinned; });
-  container.innerHTML = '<div class="announcement-list">' +
-    sorted.map(function(a) {
-      var h = db_hackathons.find(function(x) { return x.id === a.hackathon_id; });
-      var hackName = h ? h.title : "General";
-      var tagClass = a.type === "alert" ? "tag-alert" : "tag-update";
-      return '<div class="announcement-card' + (a.pinned ? " pinned" : "") + '">' +
-        '<div class="ann-header"><span class="ann-title">' + (a.pinned ? "pin " : "") + a.title + '</span><span class="ann-meta">' + a.date + '</span></div>' +
-        '<div class="ann-body">' + a.body + '</div>' +
-        '<span class="ann-tag ' + tagClass + '">' + capitalize(a.type) + '</span>' +
-        '<span class="ann-tag" style="margin-left:0.3rem">' + hackName + '</span>' +
-        '<span style="font-size:0.75rem;color:var(--text-muted);margin-left:0.5rem">by ' + a.author + '</span>' +
-        '</div>';
-    }).join("") + '</div>';
+  var pinned  = sorted.filter(function(a) { return a.pinned; });
+  var regular = sorted.filter(function(a) { return !a.pinned; });
+
+  var html = "";
+
+  if (pinned.length > 0) {
+    html += '<div class="ann-section-label">📌 Pinned</div>' +
+      '<div class="announcement-list">' + pinned.map(renderAnnouncementCard).join("") + '</div>';
+  }
+  if (regular.length > 0) {
+    html += '<div class="ann-section-label" style="margin-top:2rem">📋 All Announcements</div>' +
+      '<div class="announcement-list">' + regular.map(renderAnnouncementCard).join("") + '</div>';
+  }
+
+  container.innerHTML = html || '<p class="empty-msg">No announcements yet.</p>';
+}
+
+function renderAnnouncementCard(a) {
+  var h = db_hackathons.find(function(x) { return x.id === a.hackathon_id; });
+  var hackName = h ? h.title : "General";
+  var typeIcon = a.type === "alert" ? "🚨" : "📣";
+  var tagClass = a.type === "alert" ? "tag-alert" : "tag-update";
+  return '<div class="announcement-card' + (a.pinned ? " pinned" : "") + '">' +
+    '<div class="ann-header">' +
+      '<div class="ann-title-row">' +
+        '<span class="ann-icon">' + typeIcon + '</span>' +
+        '<span class="ann-title">' + a.title + '</span>' +
+      '</div>' +
+      '<span class="ann-meta">🗓 ' + a.date + '</span>' +
+    '</div>' +
+    '<div class="ann-body">' + a.body + '</div>' +
+    '<div class="ann-footer">' +
+      '<span class="ann-tag ' + tagClass + '">' + capitalize(a.type) + '</span>' +
+      '<span class="ann-tag">' + hackName + '</span>' +
+      '<span class="ann-author">by ' + a.author + '</span>' +
+    '</div>' +
+  '</div>';
 }
 
 // =============================================================================
