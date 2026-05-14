@@ -815,27 +815,76 @@ function renderDashboard() {
 
 function _renderDashboardContent() {
   if (!currentUser) return;
-  document.getElementById("dashboard-title").textContent = currentUser.role + " Dashboard";
-  var html = '<div class="dashboard-profile">' +
-    '<div class="profile-avatar">' + currentUser.name.charAt(0).toUpperCase() + '</div>' +
-    '<div><h3>' + currentUser.name + '</h3>' +
-    '<p>' + currentUser.email + ' <span class="role-badge">' + currentUser.role + '</span></p>' +
-    (currentUser.org ? '<p>Organization: ' + currentUser.org + '</p>' : '') +
-    (currentUser.expertise ? '<p>Expertise: ' + currentUser.expertise + '</p>' : '') +
-    '<p style="font-size:0.8rem;color:var(--text-muted)">Member since ' + (currentUser.created_at || "2026") + '</p>' +
-    '</div></div>';
+  document.getElementById("dashboard-title").textContent = "My Profile";
+
+  var roleIcon = currentUser.role === "Judge" ? "⚖️" : currentUser.role === "Organizer" ? "🎯" : "👨‍💻";
+  var roleColor = currentUser.role === "Judge" ? "#3b82f6" : currentUser.role === "Organizer" ? "#f59e0b" : "#6c63ff";
+
+  // ── Profile Card ──
+  var html = '<div class="profile-page">' +
+
+    // Avatar + basic info
+    '<div class="profile-card">' +
+      '<div class="profile-avatar-lg">' + currentUser.name.charAt(0).toUpperCase() + '</div>' +
+      '<div class="profile-info">' +
+        '<h2 class="profile-name">' + currentUser.name + '</h2>' +
+        '<p class="profile-email">✉️ ' + currentUser.email + '</p>' +
+        (currentUser.org    ? '<p class="profile-detail">🏢 ' + currentUser.org + '</p>' : '') +
+        (currentUser.expertise ? '<p class="profile-detail">🔬 ' + currentUser.expertise + '</p>' : '') +
+        '<p class="profile-detail">📅 Member since ' + (currentUser.created_at || "2026") + '</p>' +
+        '<span class="profile-role-badge" style="background:' + roleColor + '20;color:' + roleColor + '">' + roleIcon + ' ' + currentUser.role + '</span>' +
+      '</div>' +
+    '</div>';
+
+  // ── Stats Row ──
+  var myRegs   = (currentUser.registeredHackathons || []).length;
+  var myTeams  = db_teams.filter(function(t) { return t.lead === currentUser.name; }).length;
+  var mySubs   = db_submissions.filter(function(s) {
+    var led = db_teams.filter(function(t) { return t.lead === currentUser.name; }).map(function(t){ return t.id; });
+    return led.includes(s.team_id);
+  }).length;
 
   if (currentUser.role === "User") {
-    var myRegs = db_registrations.filter(function(r) { return r.user_id === currentUser.id || (currentUser.registeredHackathons && currentUser.registeredHackathons.includes(r.hackathon_id)); });
-    var myHackathons = db_hackathons.filter(function(h) { return currentUser.registeredHackathons && currentUser.registeredHackathons.includes(h.id); });
-    var myTeams = db_teams.filter(function(t) { return t.lead === currentUser.name; });
-    var mySubs = db_submissions.filter(function(s) { return myTeams.some(function(t) { return t.id === s.team_id; }); });
+    html += '<div class="profile-stats">' +
+      '<div class="profile-stat"><span class="profile-stat-num">' + myRegs  + '</span><span>Hackathons</span></div>' +
+      '<div class="profile-stat"><span class="profile-stat-num">' + myTeams + '</span><span>Teams Led</span></div>' +
+      '<div class="profile-stat"><span class="profile-stat-num">' + mySubs  + '</span><span>Submissions</span></div>' +
+    '</div>';
+  } else if (currentUser.role === "Organizer") {
+    var myHacks = db_hackathons.filter(function(h) { return h.organizer_id === currentUser.id; }).length;
+    html += '<div class="profile-stats">' +
+      '<div class="profile-stat"><span class="profile-stat-num">' + myHacks + '</span><span>Hackathons</span></div>' +
+      '<div class="profile-stat"><span class="profile-stat-num">' + db_teams.filter(function(t){ return db_hackathons.filter(function(h){ return h.organizer_id===currentUser.id; }).map(function(h){return h.id;}).includes(t.hackathon_id); }).length + '</span><span>Teams</span></div>' +
+      '<div class="profile-stat"><span class="profile-stat-num">' + db_announcements.length + '</span><span>Announcements</span></div>' +
+    '</div>';
+  } else if (currentUser.role === "Judge") {
+    html += '<div class="profile-stats">' +
+      '<div class="profile-stat"><span class="profile-stat-num">' + db_results.filter(function(r){ return r.judge_id === currentUser.id; }).length + '</span><span>Evaluated</span></div>' +
+      '<div class="profile-stat"><span class="profile-stat-num">' + db_submissions.length + '</span><span>Total Submissions</span></div>' +
+    '</div>';
+  }
 
-    html += '<div class="dash-tabs">' +
-      '<button class="dash-tab active" onclick="switchDashTab(\'registrations\', this)">My Registrations (' + myHackathons.length + ')</button>' +
-      '<button class="dash-tab" onclick="switchDashTab(\'teams\', this)">My Teams (' + myTeams.length + ')</button>' +
-      '<button class="dash-tab" onclick="switchDashTab(\'submissions\', this)">Submissions (' + mySubs.length + ')</button>' +
-      '</div>';
+  // ── Tabs ──
+  html += '<div class="dash-tabs" style="margin-top:2rem">';
+  if (currentUser.role === "User") {
+    html += '<button class="dash-tab active" onclick="switchDashTab(\'registrations\',this)">Registered Hackathons</button>' +
+            '<button class="dash-tab" onclick="switchDashTab(\'teams\',this)">My Teams</button>' +
+            '<button class="dash-tab" onclick="switchDashTab(\'submissions\',this)">Submissions</button>';
+  } else if (currentUser.role === "Organizer") {
+    html += '<button class="dash-tab active" onclick="switchDashTab(\'my-hackathons\',this)">My Hackathons</button>' +
+            '<button class="dash-tab" onclick="switchDashTab(\'all-teams\',this)">Registered Teams</button>' +
+            '<button class="dash-tab" onclick="switchDashTab(\'announcements-tab\',this)">Announcements</button>';
+  } else if (currentUser.role === "Judge") {
+    html += '<button class="dash-tab active" onclick="switchDashTab(\'pending-eval\',this)">Pending Evaluation</button>' +
+            '<button class="dash-tab" onclick="switchDashTab(\'completed-eval\',this)">Completed</button>';
+  }
+  html += '</div>';
+
+  // ── Tab Panels ──
+  if (currentUser.role === "User") {
+    var myHackathons = db_hackathons.filter(function(h) { return currentUser.registeredHackathons && currentUser.registeredHackathons.includes(h.id); });
+    var myTeamsList  = db_teams.filter(function(t) { return t.lead === currentUser.name; });
+    var mySubsList   = db_submissions.filter(function(s) { return myTeamsList.some(function(t) { return t.id === s.team_id; }); });
 
     html += '<div id="dash-registrations" class="dash-panel active">' +
       (myHackathons.length === 0
@@ -844,28 +893,28 @@ function _renderDashboardContent() {
             return '<div class="hackathon-card" onclick="openHackathonDetail(' + h.id + ')">' +
               '<div class="card-header"><span class="status-badge status-' + h.status + '">' + capitalize(h.status) + '</span><span class="card-prize">' + h.prize + '</span></div>' +
               '<h3 class="card-title">' + h.title + '</h3><p class="card-theme">' + h.theme + '</p>' +
-              '<div class="card-meta"><span>date ' + h.date + '</span><span>pin ' + h.location + '</span></div>' +
+              '<div class="card-meta"><span>📅 ' + h.date + '</span><span>📍 ' + h.location + '</span></div>' +
               (h.status === "ongoing" ? '<button class="btn-primary btn-sm" style="margin-top:0.5rem" onclick="event.stopPropagation();openSubmissionModal(' + h.id + ')">Submit Project</button>' : '') +
               '</div>';
           }).join("") + '</div>') + '</div>';
 
     html += '<div id="dash-teams" class="dash-panel">' +
-      (myTeams.length === 0
+      (myTeamsList.length === 0
         ? '<p class="empty-msg">No teams yet. Register for a hackathon to create a team.</p>'
-        : myTeams.map(function(t) {
+        : myTeamsList.map(function(t) {
             var members = db_team_members.filter(function(m) { return m.team_id === t.id; });
             var hackathon = db_hackathons.find(function(h) { return h.id === t.hackathon_id; });
             return '<div class="submission-card">' +
-              '<div class="sub-header"><span class="sub-title">team ' + t.name + '</span><span class="tag">' + (hackathon ? hackathon.title : "") + '</span></div>' +
+              '<div class="sub-header"><span class="sub-title">👥 ' + t.name + '</span><span class="tag">' + (hackathon ? hackathon.title : "") + '</span></div>' +
               '<div class="sub-desc">Tech: ' + t.tech + '</div>' +
-              '<div style="margin-top:0.5rem">' + members.map(function(m) { return '<span class="tag">' + m.user_name + ' - ' + m.role + '</span>'; }).join(" ") + '</div>' +
+              '<div style="margin-top:0.5rem">' + members.map(function(m) { return '<span class="tag">' + m.user_name + ' — ' + m.role + '</span>'; }).join(" ") + '</div>' +
               '</div>';
           }).join("")) + '</div>';
 
     html += '<div id="dash-submissions" class="dash-panel">' +
-      (mySubs.length === 0
+      (mySubsList.length === 0
         ? '<p class="empty-msg">No submissions yet.</p>'
-        : mySubs.map(function(s) {
+        : mySubsList.map(function(s) {
             var result = db_results.find(function(r) { return r.submission_id === s.id; });
             return '<div class="submission-card">' +
               '<div class="sub-header"><span class="sub-title">' + s.title + '</span>' +
@@ -877,30 +926,24 @@ function _renderDashboardContent() {
           }).join("")) + '</div>';
 
   } else if (currentUser.role === "Judge") {
-    // Load submissions from API
     document.getElementById("dashboard-content").innerHTML = html +
-      '<div id="dash-tabs-placeholder"></div><p style="color:var(--text-muted);padding:1rem">Loading submissions...</p>';
+      '<p style="color:var(--text-muted);padding:1rem">Loading submissions...</p></div>';
 
     apiGet('/submissions').then(function(subs) {
       if (!Array.isArray(subs)) subs = [];
-      var pendingSubs = subs.filter(function(s) { return s.status !== 'evaluated'; });
+      var pendingSubs   = subs.filter(function(s) { return s.status !== 'evaluated'; });
       var evaluatedSubs = subs.filter(function(s) { return s.status === 'evaluated'; });
 
       var judgeHtml = html;
-      judgeHtml += '<div class="dash-tabs">' +
-        '<button class="dash-tab active" onclick="switchDashTab(\'pending-eval\', this)">Pending Evaluation (' + pendingSubs.length + ')</button>' +
-        '<button class="dash-tab" onclick="switchDashTab(\'completed-eval\', this)">Completed (' + evaluatedSubs.length + ')</button>' +
-        '</div>';
-
       judgeHtml += '<div id="dash-pending-eval" class="dash-panel active">' +
         (pendingSubs.length === 0
-          ? '<p class="empty-msg">All submissions have been evaluated.</p>'
+          ? '<p class="empty-msg">All submissions have been evaluated. 🎉</p>'
           : pendingSubs.map(function(s) {
               return '<div class="submission-card">' +
                 '<div class="sub-header"><span class="sub-title">' + s.project_title + '</span><span class="status-badge status-ongoing">Needs Review</span></div>' +
-                '<div class="sub-hackathon">' + (s.team_name || '') + ' — ' + (s.hackathon_title || '') + '</div>' +
+                '<div class="sub-hackathon">' + (s.team_name||'') + ' — ' + (s.hackathon_title||'') + '</div>' +
                 (s.github_link ? '<div class="sub-links"><a href="' + s.github_link + '" target="_blank">GitHub Repo</a></div>' : '') +
-                '<button class="btn-primary btn-sm" style="margin-top:0.75rem" onclick="openEvalModalApi(' + s.submission_id + ', ' + s.hackathon_id + ', \'' + (s.project_title || '').replace(/'/g, '') + '\', \'' + (s.team_name || '').replace(/'/g, '') + '\')">Evaluate</button>' +
+                '<button class="btn-primary btn-sm" style="margin-top:0.75rem" onclick="openEvalModalApi(' + s.submission_id + ',' + s.hackathon_id + ',\'' + (s.project_title||'').replace(/'/g,'') + '\',\'' + (s.team_name||'').replace(/'/g,'') + '\')">Evaluate</button>' +
                 '</div>';
             }).join("")) + '</div>';
 
@@ -910,52 +953,51 @@ function _renderDashboardContent() {
           : evaluatedSubs.map(function(s) {
               return '<div class="submission-card">' +
                 '<div class="sub-header"><span class="sub-title">' + s.project_title + '</span><span class="status-badge status-past">Evaluated</span></div>' +
-                '<div class="sub-hackathon">' + (s.team_name || '') + ' — ' + (s.hackathon_title || '') + '</div>' +
+                '<div class="sub-hackathon">' + (s.team_name||'') + ' — ' + (s.hackathon_title||'') + '</div>' +
                 '</div>';
             }).join("")) + '</div>';
 
+      judgeHtml += '</div>'; // close profile-page
       document.getElementById("dashboard-content").innerHTML = judgeHtml;
     }).catch(function() {
-      document.getElementById("dashboard-content").innerHTML = html + '<p class="empty-msg">Could not load submissions.</p>';
+      document.getElementById("dashboard-content").innerHTML = html + '<p class="empty-msg">Could not load submissions.</p></div>';
     });
-    return; // early return, content set async above
+    return;
 
   } else if (currentUser.role === "Organizer") {
-    var myHacks = db_hackathons.filter(function(h) { return h.organizer_id === currentUser.id; });
-    var allTeams = db_teams.filter(function(t) { return myHacks.some(function(h) { return h.id === t.hackathon_id; }); });
-    html += '<div class="dash-tabs">' +
-      '<button class="dash-tab active" onclick="switchDashTab(\'my-hackathons\', this)">My Hackathons (' + myHacks.length + ')</button>' +
-      '<button class="dash-tab" onclick="switchDashTab(\'all-teams\', this)">Registered Teams (' + allTeams.length + ')</button>' +
-      '<button class="dash-tab" onclick="switchDashTab(\'announcements-tab\', this)">Announcements</button>' +
-      '</div>';
+    var myHacksList = db_hackathons.filter(function(h) { return h.organizer_id === currentUser.id; });
+    var allTeamsList = db_teams.filter(function(t) { return myHacksList.some(function(h) { return h.id === t.hackathon_id; }); });
+
     html += '<div id="dash-my-hackathons" class="dash-panel active">' +
-      (myHacks.length === 0
+      (myHacksList.length === 0
         ? '<p class="empty-msg">No hackathons yet.</p>'
-        : '<div class="hackathon-grid">' + myHacks.map(function(h) {
+        : '<div class="hackathon-grid">' + myHacksList.map(function(h) {
             var teamCount = db_teams.filter(function(t) { return t.hackathon_id === h.id; }).length;
-            var subCount = db_submissions.filter(function(s) { return s.hackathon_id === h.id; }).length;
+            var subCount  = db_submissions.filter(function(s) { return s.hackathon_id === h.id; }).length;
             return '<div class="hackathon-card" onclick="openHackathonDetail(' + h.id + ')">' +
               '<div class="card-header"><span class="status-badge status-' + h.status + '">' + capitalize(h.status) + '</span><span class="card-prize">' + h.prize + '</span></div>' +
               '<h3 class="card-title">' + h.title + '</h3><p class="card-theme">' + h.theme + '</p>' +
               '<div class="card-meta"><span>Teams: ' + teamCount + '</span><span>Submissions: ' + subCount + '</span></div>' +
               '</div>';
           }).join("") + '</div>') +
-      '<button class="btn-primary" style="margin-top:1rem" onclick="showToast(\'Create hackathon coming soon!\', \'info\')">+ Create Hackathon</button>' +
+      '<button class="btn-primary" style="margin-top:1rem" onclick="showToast(\'Create hackathon coming soon!\',\'info\')">+ Create Hackathon</button>' +
       '</div>';
+
     html += '<div id="dash-all-teams" class="dash-panel">' +
-      (allTeams.length === 0
+      (allTeamsList.length === 0
         ? '<p class="empty-msg">No teams registered yet.</p>'
-        : allTeams.map(function(t) {
+        : allTeamsList.map(function(t) {
             var members = db_team_members.filter(function(m) { return m.team_id === t.id; });
             var h = db_hackathons.find(function(x) { return x.id === t.hackathon_id; });
             return '<div class="submission-card">' +
-              '<div class="sub-header"><span class="sub-title">team ' + t.name + '</span><span class="tag">' + (h ? h.title : "") + '</span></div>' +
+              '<div class="sub-header"><span class="sub-title">👥 ' + t.name + '</span><span class="tag">' + (h ? h.title : "") + '</span></div>' +
               '<div class="sub-desc">Lead: ' + t.lead + ' | Size: ' + t.size + ' | Tech: ' + t.tech + '</div>' +
               '<div style="margin-top:0.4rem">' + members.map(function(m) { return '<span class="tag">' + m.user_name + '</span>'; }).join(" ") + '</div>' +
               '</div>';
           }).join("")) + '</div>';
+
     html += '<div id="dash-announcements-tab" class="dash-panel">' +
-      '<button class="btn-primary" style="margin-bottom:1rem" onclick="showToast(\'Post announcement coming soon!\', \'info\')">+ Post Announcement</button>' +
+      '<button class="btn-primary" style="margin-bottom:1rem" onclick="showToast(\'Post announcement coming soon!\',\'info\')">+ Post Announcement</button>' +
       db_announcements.map(function(a) {
         return '<div class="announcement-card' + (a.pinned ? " pinned" : "") + '">' +
           '<div class="ann-header"><span class="ann-title">' + a.title + '</span><span class="ann-meta">' + a.date + '</span></div>' +
@@ -963,6 +1005,7 @@ function _renderDashboardContent() {
       }).join("") + '</div>';
   }
 
+  html += '</div>'; // close profile-page
   document.getElementById("dashboard-content").innerHTML = html;
 }
 

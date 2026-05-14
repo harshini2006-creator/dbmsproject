@@ -175,3 +175,28 @@ footer { background: var(--text); color: #fff; padding: 2rem 1.5rem 1rem; text-a
   .criteria-grid { grid-template-columns: 1fr; }
   footer { padding: 1.5rem 4% 0.75rem; }
 }
+
+/* ── Profile Page ── */
+.profile-page { display: flex; flex-direction: column; gap: 2rem; }
+
+.profile-card { display: flex; align-items: center; gap: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 2rem; box-shadow: var(--shadow); }
+
+.profile-avatar-lg { width: 90px; height: 90px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #a78bfa); color: #fff; font-size: 2.5rem; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 16px rgba(108,99,255,0.3); }
+
+.profile-info { display: flex; flex-direction: column; gap: 0.4rem; }
+.profile-name { font-size: 1.6rem; font-weight: 800; color: var(--text); }
+.profile-email { font-size: 0.95rem; color: var(--text-muted); }
+.profile-detail { font-size: 0.9rem; color: var(--text-muted); }
+.profile-role-badge { display: inline-block; padding: 0.3rem 0.9rem; border-radius: 20px; font-size: 0.85rem; font-weight: 700; margin-top: 0.25rem; width: fit-content; }
+
+.profile-stats { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+.profile-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 2rem; text-align: center; display: flex; flex-direction: column; gap: 0.25rem; flex: 1; min-width: 120px; box-shadow: var(--shadow); }
+.profile-stat-num { font-size: 2rem; font-weight: 800; color: var(--primary); }
+.profile-stat span:last-child { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
+
+@media (max-width: 600px) {
+  .profile-card { flex-direction: column; text-align: center; align-items: center; }
+  .profile-role-badge { margin: 0 auto; }
+  .profile-stats { gap: 1rem; }
+  .profile-stat { padding: 1rem 1.25rem; }
+}
