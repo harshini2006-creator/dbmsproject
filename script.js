@@ -200,9 +200,14 @@ window.onload = function () {
   }
 
   document.addEventListener("click", function (e) {
-    const wrapper = document.getElementById("notif-wrapper");
-    if (wrapper && !wrapper.contains(e.target)) {
+    var notifWrapper = document.getElementById("notif-wrapper");
+    if (notifWrapper && !notifWrapper.contains(e.target)) {
       document.getElementById("notif-panel").classList.remove("open");
+    }
+    var profileWrapper = document.getElementById("profile-icon-wrapper");
+    if (profileWrapper && !profileWrapper.contains(e.target)) {
+      var pd = document.getElementById("profile-dropdown");
+      if (pd) pd.classList.remove("open");
     }
   });
 };
@@ -375,25 +380,61 @@ function logout() {
 }
 
 function updateAuthUI() {
-  var loginBtn = document.querySelector(".nav-auth .btn-outline");
+  var loginBtn  = document.querySelector(".nav-auth .btn-outline");
   var signupBtn = document.querySelector(".nav-auth .btn-primary");
-  var userInfo = document.getElementById("user-info");
   var navDashboard = document.getElementById("nav-dashboard");
   var rolesSection = document.querySelector(".roles-section");
+  var profileWrapper = document.getElementById("profile-icon-wrapper");
+
   if (currentUser) {
-    loginBtn.style.display = "none";
-    signupBtn.style.display = "none";
-    userInfo.style.display = "flex";
-    document.getElementById("user-greeting").textContent = currentUser.name + " (" + currentUser.role + ")";
-    navDashboard.style.display = "block";
+    if (loginBtn)  loginBtn.style.display  = "none";
+    if (signupBtn) signupBtn.style.display = "none";
+    if (navDashboard) navDashboard.style.display = "block";
     if (rolesSection) rolesSection.style.display = "none";
+    if (profileWrapper) profileWrapper.style.display = "block";
+
+    // Fill profile icon letter
+    var letter = currentUser.name ? currentUser.name.charAt(0).toUpperCase() : "U";
+    var el = document.getElementById("profile-icon-letter");
+    if (el) el.textContent = letter;
+
+    // Fill dropdown
+    var avatar = document.getElementById("profile-drop-avatar");
+    if (avatar) avatar.textContent = letter;
+    var nameEl = document.getElementById("profile-drop-name");
+    if (nameEl) nameEl.textContent = currentUser.name;
+    var emailEl = document.getElementById("profile-drop-email");
+    if (emailEl) emailEl.textContent = currentUser.email;
+    var roleEl = document.getElementById("profile-drop-role");
+    if (roleEl) {
+      roleEl.textContent = currentUser.role;
+      var roleColors = { User: "#6c63ff", Judge: "#3b82f6", Organizer: "#f59e0b" };
+      roleEl.style.background = (roleColors[currentUser.role] || "#6c63ff") + "20";
+      roleEl.style.color = roleColors[currentUser.role] || "#6c63ff";
+    }
+    var extraEl = document.getElementById("profile-drop-extra");
+    if (extraEl) {
+      var extras = [];
+      if (currentUser.org)       extras.push('<div class="profile-drop-detail">🏢 ' + currentUser.org + '</div>');
+      if (currentUser.expertise) extras.push('<div class="profile-drop-detail">🔬 ' + currentUser.expertise + '</div>');
+      extras.push('<div class="profile-drop-detail">📅 Member since ' + (currentUser.created_at || "2026") + '</div>');
+      extraEl.innerHTML = extras.join("");
+    }
   } else {
-    loginBtn.style.display = "inline-block";
-    signupBtn.style.display = "inline-block";
-    userInfo.style.display = "none";
-    navDashboard.style.display = "none";
+    if (loginBtn)  loginBtn.style.display  = "inline-block";
+    if (signupBtn) signupBtn.style.display = "inline-block";
+    if (navDashboard) navDashboard.style.display = "none";
     if (rolesSection) rolesSection.style.display = "block";
+    if (profileWrapper) profileWrapper.style.display = "none";
   }
+}
+
+function toggleProfilePanel() {
+  var panel = document.getElementById("profile-dropdown");
+  if (panel) panel.classList.toggle("open");
+  // close notif panel if open
+  var notif = document.getElementById("notif-panel");
+  if (notif) notif.classList.remove("open");
 }
 
 
