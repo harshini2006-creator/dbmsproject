@@ -1,7 +1,7 @@
 ﻿// =============================================================================
 // API INTEGRATION LAYER
 // =============================================================================
-const API = 'http://localhost:4000/api';
+const API = 'http://localhost:5000/api';
 
 function apiGet(path) {
   var token = localStorage.getItem('token');
@@ -165,6 +165,24 @@ window.onload = function () {
   });
 
   renderLeaderboard(db_leaderboard);
+  // Also try to fetch leaderboard from API
+  apiGet('/leaderboard').then(function(data) {
+    if (Array.isArray(data) && data.length > 0) {
+      var mapped = data.map(function(r) {
+        return {
+          rank: r.rank_position,
+          team_name: r.team_name || ('Team ' + r.team_id),
+          hackathon: r.hackathon_title || ('Hackathon ' + r.hackathon_id),
+          score: r.score,
+          project: r.project || '',
+          members: r.members || 0
+        };
+      });
+      db_leaderboard.splice(0, db_leaderboard.length);
+      mapped.forEach(function(r) { db_leaderboard.push(r); });
+      renderLeaderboard(db_leaderboard);
+    }
+  }).catch(function() { /* keep local data */ });
   renderResults();
   renderAnnouncements();
   updateMemberFields();
