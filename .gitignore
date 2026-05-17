@@ -1,3 +1,8 @@
 node_modules/
+<<<<<<< HEAD
 .env
 .vscode/
+=======
+
+.env
+>>>>>>> 93ed922 (commit)
