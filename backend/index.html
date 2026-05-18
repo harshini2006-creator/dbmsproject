@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>HackHub - Hackathon Management</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Navbar -->
+  <header>
+    <nav class="navbar">
+      <div class="logo">HackHub</div>
+      <ul class="nav-links">
+        <li><a href="#" onclick="showPage('home')">Home</a></li>
+        <li><a href="#" onclick="showPage('hackathons')">Hackathons</a></li>
+        <li id="nav-dashboard" style="display:none"><a href="#" onclick="showPage('dashboard')">Profile</a></li>
+        <li><a href="#" onclick="showPage('leaderboard')">Leaderboard</a></li>
+        <li><a href="#" onclick="showPage('results')">Results</a></li>
+        <li><a href="#" onclick="showPage('announcements')">Announcements</a></li>
+      </ul>
+      <!-- Notification Bell -->
+      <div class="notif-wrapper" id="notif-wrapper">
+        <button class="notif-bell" onclick="toggleNotifPanel()" title="Notifications">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          <span class="notif-badge hidden" id="notif-badge">0</span>
+        </button>
+        <div class="notif-panel" id="notif-panel">
+          <div class="notif-panel-header">
+            <span>Notifications</span>
+            <button class="notif-clear" onclick="clearNotifications()">Mark all read</button>
+          </div>
+          <div class="notif-list" id="notif-list">
+            <div class="notif-empty">No notifications yet</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile Icon (shown when logged in) -->
+      <div class="profile-icon-wrapper" id="profile-icon-wrapper" style="display:none">
+        <button class="profile-icon-btn" onclick="toggleProfilePanel()" title="Profile">
+          <span id="profile-icon-letter">U</span>
+        </button>
+        <div class="profile-dropdown" id="profile-dropdown">
+          <div class="profile-drop-header">
+            <div class="profile-drop-avatar" id="profile-drop-avatar">U</div>
+            <div>
+              <div class="profile-drop-name" id="profile-drop-name">User</div>
+              <div class="profile-drop-email" id="profile-drop-email">user@email.com</div>
+              <span class="profile-drop-role" id="profile-drop-role">User</span>
+            </div>
+          </div>
+          <div class="profile-drop-divider"></div>
+          <div class="profile-drop-info" id="profile-drop-extra"></div>
+          <div class="profile-drop-divider"></div>
+          <button class="profile-drop-btn" onclick="showPage('dashboard'); toggleProfilePanel()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            View Profile
+          </button>
+          <button class="profile-drop-btn profile-drop-logout" onclick="logout()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Logout
+          </button>
+        </div>
+      </div>
+
+      <div class="nav-auth">
+        <button class="btn-outline" onclick="openModal('loginModal')">Login</button>
+        <button class="btn-primary" onclick="openModal('signupModal')">Sign Up</button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Home Page -->
+  <main id="page-home" class="page active">
+    <section class="hero">
+      <div class="hero-content">
+        <h1>Build. Compete. Innovate.</h1>
+        <p>Join the world's most exciting hackathons. Connect with developers, designers, and innovators.</p>
+        <button class="btn-primary btn-lg" onclick="currentUser ? showPage('dashboard') : openModal('signupModal')">Get Started</button>
+      </div>
+    </section>
+
+    <section class="stats-bar">
+      <div class="stat"><span class="stat-num">120+</span><span>Hackathons</span></div>
+      <div class="stat"><span class="stat-num">5,000+</span><span>Participants</span></div>
+      <div class="stat"><span class="stat-num">300+</span><span>Projects</span></div>
+      <div class="stat"><span class="stat-num">$500K+</span><span>Prize Pool</span></div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Upcoming Hackathons</h2>
+      <div class="hackathon-grid" id="home-hackathon-grid"></div>
+      <div class="center-btn">
+        <button class="btn-outline" onclick="showPage('hackathons')">View All Hackathons</button>
+      </div>
+    </section>
+
+    <section class="section roles-section">
+      <h2 class="section-title">Join as Who You Are</h2>
+      <div class="roles-grid">
+        <div class="role-card">
+          <div class="role-icon">👨‍💻</div>
+          <h3>Participant</h3>
+          <p>Register for hackathons, form teams, submit projects, and compete for prizes.</p>
+          <button class="btn-primary" onclick="openSignupAs('User')">Join as User</button>
+        </div>
+        <div class="role-card">
+          <div class="role-icon">⚖️</div>
+          <h3>Judge</h3>
+          <p>Evaluate submissions, provide feedback, and help recognize outstanding talent.</p>
+          <button class="btn-primary" onclick="openSignupAs('Judge')">Join as Judge</button>
+        </div>
+        <div class="role-card">
+          <div class="role-icon">🎯</div>
+          <h3>Organizer</h3>
+          <p>Create and manage hackathons, set challenges, and build your community.</p>
+          <button class="btn-primary" onclick="openSignupAs('Organizer')">Join as Organizer</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Hackathons Page -->
+  <main id="page-hackathons" class="page">
+    <section class="section">
+      <h2 class="section-title">All Hackathons</h2>
+      <div class="filter-bar">
+        <button class="filter-btn active" onclick="filterHackathons('all', this)">All</button>
+        <button class="filter-btn" onclick="filterHackathons('upcoming', this)">Upcoming</button>
+        <button class="filter-btn" onclick="filterHackathons('ongoing', this)">Ongoing</button>
+        <button class="filter-btn" onclick="filterHackathons('past', this)">Past</button>
+      </div>
+      <div class="hackathon-grid" id="all-hackathon-grid"></div>
+    </section>
+  </main>
+
+  <!-- Profile Page -->
+  <main id="page-dashboard" class="page">
+    <section class="section">
+      <h2 class="section-title" id="dashboard-title">My Profile</h2>
+      <div id="dashboard-content"></div>
+    </section>
+  </main>
+
+  <!-- Login Modal -->
+  <div id="loginModal" class="modal-overlay" onclick="closeModalOutside(event, 'loginModal')">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeModal('loginModal')">&times;</button>
+      <h2>Welcome Back</h2>
+      <p class="modal-sub">Log in to your HackHub account</p>
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="login-email" placeholder="you@example.com" required>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="login-password" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn-primary btn-full">Login</button>
+      </form>
+      <p class="modal-footer-text">Don't have an account? <a href="#" onclick="switchModal('loginModal','signupModal')">Sign Up</a></p>
+    </div>
+  </div>
+
+  <!-- Signup Modal -->
+  <div id="signupModal" class="modal-overlay" onclick="closeModalOutside(event, 'signupModal')">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeModal('signupModal')">&times;</button>
+
+      <!-- Step 1: Role Selection -->
+      <div id="signup-step-1">
+        <h2>Create Account</h2>
+        <p class="modal-sub">Choose your role to get started</p>
+        <div class="role-select-grid">
+          <button class="role-select-btn" onclick="selectRole('User')">
+            <span class="role-select-icon">👨‍💻</span>
+            <span>User</span>
+          </button>
+          <button class="role-select-btn" onclick="selectRole('Judge')">
+            <span class="role-select-icon">⚖️</span>
+            <span>Judge</span>
+          </button>
+          <button class="role-select-btn" onclick="selectRole('Organizer')">
+            <span class="role-select-icon">🎯</span>
+            <span>Organizer</span>
+          </button>
+        </div>
+        <p class="modal-footer-text">Already have an account? <a href="#" onclick="switchModal('signupModal','loginModal')">Login</a></p>
+      </div>
+
+      <!-- Step 2: Signup Form -->
+      <div id="signup-step-2" style="display:none">
+        <button class="back-btn" onclick="goBackToRoles()">&#8592; Back</button>
+        <h2>Sign Up as <span id="selected-role-label"></span></h2>
+        <p class="modal-sub">Fill in your details below</p>
+        <form id="signupForm" onsubmit="handleSignup(event)">
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="signup-name" placeholder="John Doe" required>
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="signup-email" placeholder="you@example.com" required>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="signup-password" placeholder="••••••••" required minlength="6">
+          </div>
+          <!-- Organizer-specific field -->
+          <div class="form-group" id="org-field" style="display:none">
+            <label>Organization Name</label>
+            <input type="text" id="signup-org" placeholder="Your company or institution">
+          </div>
+          <!-- Judge-specific field -->
+          <div class="form-group" id="judge-field" style="display:none">
+            <label>Area of Expertise</label>
+            <input type="text" id="signup-expertise" placeholder="e.g. AI, Web Dev, Blockchain">
+          </div>
+          <button type="submit" class="btn-primary btn-full">Create Account</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hackathon Detail Modal -->
+  <div id="hackathonModal" class="modal-overlay" onclick="closeModalOutside(event, 'hackathonModal')">
+    <div class="modal-box modal-wide">
+      <button class="modal-close" onclick="closeModal('hackathonModal')">&times;</button>
+      <div id="hackathon-detail-content"></div>
+    </div>
+  </div>
+
+  <!-- Team Registration Modal -->
+  <div id="registerModal" class="modal-overlay" onclick="closeModalOutside(event, 'registerModal')">
+    <div class="modal-box modal-wide">
+      <button class="modal-close" onclick="closeModal('registerModal')">&times;</button>
+      <h2>Register for Hackathon</h2>
+      <p class="modal-sub">Fill in your team details to complete registration</p>
+      <div class="reg-hackathon-title" id="reg-hackathon-name"></div>
+      <form id="registerForm" onsubmit="handleRegistration(event)">
+        <div class="form-group">
+          <label>Team Name</label>
+          <input type="text" id="reg-team-name" placeholder="e.g. Code Wizards" required>
+        </div>
+        <div class="form-group">
+          <label>Project Idea / Title</label>
+          <input type="text" id="reg-project-title" placeholder="e.g. AI-powered waste sorter" required>
+        </div>
+        <div class="form-group">
+          <label>Brief Description</label>
+          <textarea id="reg-description" placeholder="Describe your project idea in a few sentences..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label>Tech Stack</label>
+          <input type="text" id="reg-tech" placeholder="e.g. React, Node.js, Python, TensorFlow">
+        </div>
+        <div class="form-group">
+          <label>Team Size</label>
+          <select id="reg-team-size" onchange="updateMemberFields()">
+            <option value="1">Solo (1 member)</option>
+            <option value="2">2 members</option>
+            <option value="3">3 members</option>
+            <option value="4" selected>4 members</option>
+            <option value="5">5 members</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Team Members</label>
+          <div id="member-fields"></div>
+          <button type="button" class="add-member-btn" onclick="addMemberField()">+ Add Member</button>
+        </div>
+        <div class="form-group">
+          <label>Contact Email</label>
+          <input type="email" id="reg-contact" placeholder="team-lead@example.com" required>
+        </div>
+        <button type="submit" class="btn-primary btn-full">Confirm Registration</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Leaderboard Page -->
+  <main id="page-leaderboard" class="page">
+    <section class="section">
+      <h2 class="section-title">🏆 Leaderboard</h2>
+      <div class="filter-bar" id="lb-filter-bar"></div>
+      <div id="leaderboard-content"></div>
+    </section>
+  </main>
+
+  <!-- Results & Winners Page -->
+  <main id="page-results" class="page">
+    <section class="section">
+      <h2 class="section-title">🥇 Results & Winners</h2>
+      <div id="results-content"></div>
+    </section>
+  </main>
+
+  <!-- Announcements Page -->
+  <main id="page-announcements" class="page">
+    <section class="section">
+      <h2 class="section-title">📢 Announcements</h2>
+      <div id="announcements-content"></div>
+    </section>
+  </main>
+
+  <!-- Submission Modal -->
+  <div id="submissionModal" class="modal-overlay" onclick="closeModalOutside(event,'submissionModal')">
+    <div class="modal-box modal-wide">
+      <button class="modal-close" onclick="closeModal('submissionModal')">&times;</button>
+      <h2>Submit Project</h2>
+      <p class="modal-sub">Share your project with the judges</p>
+      <div class="reg-hackathon-title" id="sub-hackathon-name"></div>
+      <form id="submissionForm" onsubmit="handleSubmission(event)">
+        <div class="form-group">
+          <label>Project Title</label>
+          <input type="text" id="sub-title" placeholder="Your project name" required>
+        </div>
+        <div class="form-group">
+          <label>Project Description</label>
+          <textarea id="sub-desc" placeholder="Describe what you built, the problem it solves..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label>GitHub / Repo URL</label>
+          <input type="url" id="sub-repo" placeholder="https://github.com/yourteam/project">
+        </div>
+        <div class="form-group">
+          <label>Demo URL (optional)</label>
+          <input type="url" id="sub-demo" placeholder="https://yourproject.demo.com">
+        </div>
+        <div class="form-group">
+          <label>Tech Stack Used</label>
+          <input type="text" id="sub-tech" placeholder="e.g. React, FastAPI, PostgreSQL">
+        </div>
+        <div class="form-group">
+          <label>Evaluation Criteria Addressed</label>
+          <div id="criteria-checks" class="criteria-grid"></div>
+        </div>
+        <button type="submit" class="btn-primary btn-full">Submit Project</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Judge Evaluation Modal -->
+  <div id="evalModal" class="modal-overlay" onclick="closeModalOutside(event,'evalModal')">
+    <div class="modal-box modal-wide">
+      <button class="modal-close" onclick="closeModal('evalModal')">&times;</button>
+      <h2>Evaluate Submission</h2>
+      <p class="modal-sub" id="eval-team-name"></p>
+      <form id="evalForm" onsubmit="handleEvaluation(event)">
+        <div id="eval-criteria-list"></div>
+        <div class="form-group" style="margin-top:1rem">
+          <label>Overall Feedback</label>
+          <textarea id="eval-feedback" placeholder="Write your overall feedback for this team..." required></textarea>
+        </div>
+        <button type="submit" class="btn-primary btn-full">Submit Evaluation</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <footer>
+    <div class="footer-content">
+      <div class="logo">HackHub</div>
+      <p>Empowering innovators worldwide.</p>
+    </div>
+    <p class="footer-copy">&copy; 2026 HackHub. All rights reserved.</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

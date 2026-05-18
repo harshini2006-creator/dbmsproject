@@ -31,24 +31,10 @@ router.put('/:id', authenticate, async (req, res) => {
   if (req.user.id !== parseInt(req.params.id))
     return res.status(403).json({ error: "Cannot update another user's profile" });
 
-  const { name, dob } = req.body;
-
-  // Validate DOB age >= 15 if provided
-  if (dob) {
-    const birth = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const m = today.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-    if (age < 15) return res.status(400).json({ error: 'Must be at least 15 years old.' });
-  }
-
+  const { name } = req.body;
   try {
-    await db.query(
-      'UPDATE users SET name = COALESCE(?, name), dob = COALESCE(?, dob) WHERE user_id = ?',
-      [name || null, dob || null, req.params.id]
-    );
-    const [rows] = await db.query('SELECT user_id, name, email, role, dob, created_at FROM users WHERE user_id = ?', [req.params.id]);
+    await db.query('UPDATE users SET name = COALESCE(?, name) WHERE user_id = ?', [name || null, req.params.id]);
+    const [rows] = await db.query('SELECT user_id, name, email, role, created_at FROM users WHERE user_id = ?', [req.params.id]);
     res.json({ message: 'Profile updated', user: rows[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });

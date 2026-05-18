@@ -37,44 +37,16 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// GET /api/hackathons/:id/registrations  — organizer sees who joined
-router.get('/:id/registrations', authenticate, authorize('Organizer'), async (req, res) => {
-  try {
-    const [hack] = await db.query('SELECT created_by FROM hackathons WHERE hackathon_id = ?', [req.params.id]);
-    if (hack.length === 0) return res.status(404).json({ error: 'Hackathon not found' });
-    if (hack[0].created_by !== req.user.id) return res.status(403).json({ error: 'Not your hackathon' });
-
-    const [rows] = await db.query(`
-      SELECT r.reg_id, r.registered_at, r.status,
-             u.user_id, u.name AS user_name, u.email
-      FROM registrations r
-      LEFT JOIN users u ON u.user_id = r.user_id
-      WHERE r.hackathon_id = ?
-      ORDER BY r.registered_at DESC
-    `, [req.params.id]);
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // POST /api/hackathons
 router.post('/', authenticate, authorize('Organizer'), async (req, res) => {
-  const { title, description, location, start_date, end_date, prize_pool, max_registrations } = req.body;
+  const { title, description, location, start_date, end_date, prize_pool } = req.body;
   if (!title || !start_date || !end_date)
     return res.status(400).json({ error: 'title, start_date, end_date are required' });
 
-  // Validate prize pool <= 5,00,000
-  if (prize_pool) {
-    const prizeNum = parseFloat(String(prize_pool).replace(/[^0-9.]/g, ''));
-    if (!isNaN(prizeNum) && prizeNum > 500000)
-      return res.status(400).json({ error: 'Prize pool cannot exceed ₹5,00,000' });
-  }
-
   try {
     const [result] = await db.query(
-      'INSERT INTO hackathons (title, description, location, start_date, end_date, prize_pool, max_registrations, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [title, description || null, location || 'Online', start_date, end_date, prize_pool || null, max_registrations || 500, req.user.id]
+      'INSERT INTO hackathons (title, description, location, start_date, end_date, prize_pool, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [title, description || null, location || 'Online', start_date, end_date, prize_pool || null, req.user.id]
     );
     res.status(201).json({ message: 'Hackathon created', id: result.insertId });
   } catch (err) {

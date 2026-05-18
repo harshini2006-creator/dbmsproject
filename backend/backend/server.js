@@ -11,30 +11,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Auto-migrate: add missing columns safely by checking INFORMATION_SCHEMA first
-async function addColumnIfMissing(table, column, definition) {
-  const [rows] = await db.query(
-    `SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
-    [table, column]
-  );
-  if (rows[0].cnt === 0) {
-    await db.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-    console.log(`Added column: ${table}.${column}`);
-  }
-}
-
-async function runMigrations() {
-  try {
-    await addColumnIfMissing('users',      'dob',               'DATE NULL');
-    await addColumnIfMissing('hackathons', 'max_registrations', 'INT NOT NULL DEFAULT 500');
-    console.log('Migrations complete.');
-  } catch (err) {
-    console.error('Migration error:', err.message);
-  }
-}
-runMigrations();
-
 // Routes
 app.use('/api/auth',               require('./routes/auth'));
 app.use('/api/users',              require('./routes/users'));

@@ -44,16 +44,6 @@ router.post('/', authenticate, authorize('User'), async (req, res) => {
     const [hackathons] = await db.query('SELECT * FROM hackathons WHERE hackathon_id = ?', [hackathon_id]);
     if (hackathons.length === 0) return res.status(404).json({ error: 'Hackathon not found' });
 
-    const hack = hackathons[0];
-
-    // Check max registrations limit
-    const [[{ reg_count }]] = await db.query(
-      'SELECT COUNT(*) AS reg_count FROM registrations WHERE hackathon_id = ?', [hackathon_id]
-    );
-    const maxReg = hack.max_registrations || 500;
-    if (reg_count >= maxReg)
-      return res.status(409).json({ error: `Registration full. Maximum ${maxReg} participants allowed.` });
-
     const [existing] = await db.query(
       'SELECT reg_id FROM registrations WHERE user_id = ? AND hackathon_id = ?',
       [req.user.id, hackathon_id]
@@ -64,16 +54,7 @@ router.post('/', authenticate, authorize('User'), async (req, res) => {
       'INSERT INTO registrations (user_id, hackathon_id, status) VALUES (?, ?, ?)',
       [req.user.id, hackathon_id, 'confirmed']
     );
-    res.status(201).json({
-      message: 'Registered successfully',
-      id: result.insertId,
-      reg_count: reg_count + 1,
-      max_registrations: maxReg,
-      user_name: req.user.name,
-      user_email: req.user.email,
-      hackathon_title: hack.title,
-      organizer_id: hack.created_by
-    });
+    res.status(201).json({ message: 'Registered successfully', id: result.insertId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
