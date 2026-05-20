@@ -21,18 +21,27 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/results
+// POST /api/results  — judge submits evaluation
 router.post('/', authenticate, authorize('Organizer', 'Judge'), async (req, res) => {
-  const { hackathon_id, team_id, position, remarks } = req.body;
-  if (!hackathon_id || !team_id || !position)
-    return res.status(400).json({ error: 'hackathon_id, team_id, position are required' });
+  const { submission_id, hackathon_id, team_id, scores, total_score, feedback } = req.body;
+  if (!submission_id && !hackathon_id)
+    return res.status(400).json({ error: 'submission_id or hackathon_id required' });
 
   try {
+    const scoresJson = scores ? JSON.stringify(scores) : null;
     const [result] = await db.query(
-      'INSERT INTO results (hackathon_id, team_id, position, remarks) VALUES (?, ?, ?, ?)',
-      [hackathon_id, team_id, position, remarks || null]
+      `INSERT INTO results (submission_id, hackathon_id, team_id, judge_id, scores, total_score, feedback, position, remarks)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [submission_id || null, hackathon_id || null, team_id || null, req.user.id,
+       scoresJson, total_score || 0, feedback || null, 0, feedback || null]
     );
-    res.status(201).json({ message: 'Result added', id: result.insertId });
+
+    // Mark submission as evaluated
+    if (submission_id) {
+      await db.query("UPDATE submissions SET status = 'evaluated' WHERE submission_id = ?", [submission_id]);
+    }
+
+    res.status(201).json({ message: 'Evaluation saved', id: result.insertId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

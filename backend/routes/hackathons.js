@@ -6,7 +6,8 @@ const { authenticate, authorize } = require('../middleware/auth');
 router.get('/', async (req, res) => {
   try {
     const [rows] = await db.query(`
-      SELECT h.*, u.name AS organizer_name
+      SELECT h.*, u.name AS organizer_name,
+        (SELECT COUNT(*) FROM registrations r WHERE r.hackathon_id = h.hackathon_id) AS participants
       FROM hackathons h
       LEFT JOIN users u ON u.user_id = h.created_by
     `);
@@ -20,7 +21,8 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const [rows] = await db.query(`
-      SELECT h.*, u.name AS organizer_name
+      SELECT h.*, u.name AS organizer_name,
+        (SELECT COUNT(*) FROM registrations r WHERE r.hackathon_id = h.hackathon_id) AS participants
       FROM hackathons h
       LEFT JOIN users u ON u.user_id = h.created_by
       WHERE h.hackathon_id = ?
@@ -60,25 +62,48 @@ router.get('/:id/registrations', authenticate, authorize('Organizer'), async (re
 
 // POST /api/hackathons
 router.post('/', authenticate, authorize('Organizer'), async (req, res) => {
-  const { title, description, location, start_date, end_date, prize_pool, max_registrations } = req.body;
+  const { title, description, theme, location, start_date, end_date, prize_pool, max_registrations, time, duration, reg_fee, tags, criteria } = req.body;
   if (!title || !start_date || !end_date)
     return res.status(400).json({ error: 'title, start_date, end_date are required' });
 
-  // Validate prize pool <= 5,00,000
   if (prize_pool) {
     const prizeNum = parseFloat(String(prize_pool).replace(/[^0-9.]/g, ''));
-    if (!isNaN(prizeNum) && prizeNum > 500000)
-      return res.status(400).json({ error: 'Prize pool cannot exceed ₹5,00,000' });
+    if (!isNaN(prizeNum) && prizeNum > 100000)
+      return res.status(400).json({ error: 'Prize pool cannot exceed ₹1,00,000' });
   }
 
+  const conn = await db.getConnection();
   try {
-    const [result] = await db.query(
-      'INSERT INTO hackathons (title, description, location, start_date, end_date, prize_pool, max_registrations, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [title, description || null, location || 'Online', start_date, end_date, prize_pool || null, max_registrations || 500, req.user.id]
+    await conn.beginTransaction();
+    const tagsStr = Array.isArray(tags) ? tags.join(',') : (tags || '');
+    const [result] = await conn.query(
+      `INSERT INTO hackathons
+        (title, description, theme, location, start_date, end_date, prize_pool, max_registrations, time, duration, reg_fee, tags, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [title, description || null, theme || null, location || 'Online', start_date, end_date,
+       prize_pool || null, max_registrations || 500, time || null, duration || null,
+       reg_fee || 'Free', tagsStr, req.user.id]
     );
-    res.status(201).json({ message: 'Hackathon created', id: result.insertId });
+    const hackathonId = result.insertId;
+
+    if (Array.isArray(criteria) && criteria.length > 0) {
+      for (const c of criteria) {
+        if (c.name) {
+          await conn.query(
+            'INSERT INTO evaluation_criteria (hackathon_id, criteria_name, max_score) VALUES (?, ?, ?)',
+            [hackathonId, c.name, c.max_score || 10]
+          );
+        }
+      }
+    }
+
+    await conn.commit();
+    res.status(201).json({ message: 'Hackathon created', id: hackathonId });
   } catch (err) {
+    await conn.rollback();
     res.status(500).json({ error: err.message });
+  } finally {
+    conn.release();
   }
 });
 

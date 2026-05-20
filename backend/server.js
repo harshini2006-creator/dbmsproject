@@ -26,14 +26,58 @@ async function addColumnIfMissing(table, column, definition) {
 
 async function runMigrations() {
   try {
-    await addColumnIfMissing('users',      'dob',               'DATE NULL');
+    // users
+    await addColumnIfMissing('users', 'dob', 'DATE NULL');
+
+    // hackathons
     await addColumnIfMissing('hackathons', 'max_registrations', 'INT NOT NULL DEFAULT 500');
+    await addColumnIfMissing('hackathons', 'theme',    'VARCHAR(255) NULL');
+    await addColumnIfMissing('hackathons', 'time',     'VARCHAR(50) NULL');
+    await addColumnIfMissing('hackathons', 'duration', 'VARCHAR(50) NULL');
+    await addColumnIfMissing('hackathons', 'reg_fee',  'VARCHAR(50) NULL DEFAULT "Free"');
+    await addColumnIfMissing('hackathons', 'tags',     'VARCHAR(500) NULL');
+
+    // results — add evaluation columns
+    await addColumnIfMissing('results', 'submission_id', 'INT NULL');
+    await addColumnIfMissing('results', 'judge_id',      'INT NULL');
+    await addColumnIfMissing('results', 'scores',        'TEXT NULL');
+    await addColumnIfMissing('results', 'total_score',   'INT NULL DEFAULT 0');
+    await addColumnIfMissing('results', 'feedback',      'TEXT NULL');
+
+    // registrations
+    await addColumnIfMissing('registrations', 'registered_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+
+    // teams
+    await addColumnIfMissing('teams', 'lead_name',   'VARCHAR(255) NULL');
+    await addColumnIfMissing('teams', 'size',        'INT DEFAULT 1');
+    await addColumnIfMissing('teams', 'tech',        'VARCHAR(500) NULL');
+
+    // team_members
+    await addColumnIfMissing('team_members', 'member_role', 'VARCHAR(100) NULL');
+    await addColumnIfMissing('submissions', 'description', 'TEXT NULL');
+    await addColumnIfMissing('submissions', 'demo_url',    'VARCHAR(500) NULL');
+    await addColumnIfMissing('submissions', 'tech_stack',  'VARCHAR(500) NULL');
+    await addColumnIfMissing('submissions', 'status',      'VARCHAR(50) NULL DEFAULT "submitted"');
+
     console.log('Migrations complete.');
   } catch (err) {
     console.error('Migration error:', err.message);
   }
 }
 runMigrations();
+
+// Serve frontend static files from parent directory
+const path = require('path');
+const frontendDir = path.join(__dirname, '..');
+app.use(express.static(frontendDir, {
+  index: 'index.html',
+  // Don't serve the backend folder itself as static
+  setHeaders: (res, filePath) => {
+    if (filePath.startsWith(path.join(frontendDir, 'backend'))) {
+      res.status(403).end();
+    }
+  }
+}));
 
 // Routes
 app.use('/api/auth',               require('./routes/auth'));
@@ -49,7 +93,7 @@ app.use('/api/prizes',             require('./routes/prizes'));
 app.use('/api/announcements',      require('./routes/announcements'));
 app.use('/api/leaderboard',        require('./routes/leaderboard'));
 
-app.get('/', (req, res) => res.json({ message: 'HackHub API running', version: '1.0.0' }));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'index.html')));
 
 // DB connection test
 app.get('/api/db-test', async (req, res) => {

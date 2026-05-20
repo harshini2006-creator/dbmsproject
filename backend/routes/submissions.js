@@ -39,24 +39,28 @@ router.get('/:id', authenticate, async (req, res) => {
 
 // POST /api/submissions
 router.post('/', authenticate, authorize('User'), async (req, res) => {
-  const { team_id, hackathon_id, project_title, github_link } = req.body;
-  if (!team_id || !hackathon_id || !project_title)
-    return res.status(400).json({ error: 'team_id, hackathon_id, project_title are required' });
+  const { team_id, hackathon_id, project_title, title, github_link, repo_url, description, demo_url, tech_stack, tech } = req.body;
+  const finalTitle = project_title || title;
+  const finalRepo  = github_link  || repo_url;
+  if (!hackathon_id || !finalTitle)
+    return res.status(400).json({ error: 'hackathon_id and project title are required' });
 
   try {
-    const [teams] = await db.query('SELECT leader_id FROM teams WHERE team_id = ?', [team_id]);
-    if (teams.length === 0) return res.status(404).json({ error: 'Team not found' });
-    if (teams[0].leader_id !== req.user.id) return res.status(403).json({ error: 'Only team leader can submit' });
+    // Find team for this user in this hackathon if team_id not provided
+    let finalTeamId = team_id;
+    if (!finalTeamId) {
+      const [teams] = await db.query('SELECT team_id FROM teams WHERE hackathon_id = ? AND leader_id = ? LIMIT 1', [hackathon_id, req.user.id]);
+      if (teams.length > 0) finalTeamId = teams[0].team_id;
+    }
 
-    const [existing] = await db.query(
-      'SELECT submission_id FROM submissions WHERE team_id = ? AND hackathon_id = ?',
-      [team_id, hackathon_id]
-    );
-    if (existing.length > 0) return res.status(409).json({ error: 'Team already submitted' });
+    if (finalTeamId) {
+      const [existing] = await db.query('SELECT submission_id FROM submissions WHERE team_id = ? AND hackathon_id = ?', [finalTeamId, hackathon_id]);
+      if (existing.length > 0) return res.status(409).json({ error: 'Team already submitted' });
+    }
 
     const [result] = await db.query(
-      'INSERT INTO submissions (team_id, hackathon_id, project_title, github_link) VALUES (?, ?, ?, ?)',
-      [team_id, hackathon_id, project_title, github_link || null]
+      'INSERT INTO submissions (team_id, hackathon_id, project_title, github_link, description, demo_url, tech_stack, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [finalTeamId || null, hackathon_id, finalTitle, finalRepo || null, description || null, demo_url || null, tech_stack || tech || null, 'submitted']
     );
     res.status(201).json({ message: 'Project submitted', id: result.insertId });
   } catch (err) {

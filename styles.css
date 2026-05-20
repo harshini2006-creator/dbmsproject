@@ -503,16 +503,30 @@ footer { background: var(--text); color: #fff; padding: 2rem 1.5rem 1rem; text-a
 .profile-dropdown {
   display: none;
   position: absolute;
-  right: 0;
+  left: 0;
   top: calc(100% + 10px);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
-  width: 260px;
+  width: 280px;
   z-index: 300;
   overflow: hidden;
 }
+
+.profile-drop-dob-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  flex-wrap: wrap;
+}
+.profile-drop-dob-label { font-weight: 600; color: var(--text-muted); font-size: 0.78rem; width: 100%; }
+.profile-drop-dob-row span:nth-child(2) { flex: 1; font-size: 0.88rem; }
+.profile-edit-btn { background: none; border: none; cursor: pointer; font-size: 0.8rem; opacity: 0.5; padding: 0; }
+.profile-edit-btn:hover { opacity: 1; }
 .profile-dropdown.open { display: block; }
 
 .profile-dropdown-header {

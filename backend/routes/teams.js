@@ -44,18 +44,36 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/teams
 router.post('/', authenticate, authorize('User'), async (req, res) => {
-  const { hackathon_id, team_name } = req.body;
+  const { hackathon_id, team_name, members, tech } = req.body;
   if (!hackathon_id || !team_name) return res.status(400).json({ error: 'hackathon_id and team_name are required' });
 
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
     const [result] = await conn.query(
-      'INSERT INTO teams (team_name, hackathon_id, leader_id) VALUES (?, ?, ?)',
-      [team_name, hackathon_id, req.user.id]
+      'INSERT INTO teams (team_name, hackathon_id, leader_id, lead_name, size, tech) VALUES (?, ?, ?, ?, ?, ?)',
+      [team_name, hackathon_id, req.user.id, req.user.name, members ? members.length : 1, tech || null]
     );
     const teamId = result.insertId;
-    await conn.query('INSERT INTO team_members (team_id, user_id) VALUES (?, ?)', [teamId, req.user.id]);
+
+    // Add leader as first member
+    await conn.query('INSERT INTO team_members (team_id, user_id, member_role) VALUES (?, ?, ?)', [teamId, req.user.id, 'Team Lead']);
+
+    // Add other members by name (they may not have accounts)
+    if (Array.isArray(members)) {
+      for (const m of members) {
+        if (m.user_name && m.user_name !== req.user.name) {
+          // Try to find user by name, insert with null user_id if not found
+          const [users] = await conn.query('SELECT user_id FROM users WHERE name = ? LIMIT 1', [m.user_name]);
+          const memberId = users.length > 0 ? users[0].user_id : null;
+          if (memberId && memberId !== req.user.id) {
+            await conn.query('INSERT IGNORE INTO team_members (team_id, user_id, member_role) VALUES (?, ?, ?)',
+              [teamId, memberId, m.role || 'Member']);
+          }
+        }
+      }
+    }
+
     await conn.commit();
     res.status(201).json({ message: 'Team created', id: teamId });
   } catch (err) {
